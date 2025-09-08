@@ -1,0 +1,5 @@
+{
+  "name": "Orbital Music Box",
+  "description": "A creative music generator where users place colored notes on a rotating disc. As the notes pass a central playhead, they create a unique melody based on their color, track, and the disc's rotation speed. Features play, speed control, and audio recording.",
+  "requestFramePermissions": []
+}
