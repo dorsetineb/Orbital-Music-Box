@@ -1,5 +1,5 @@
 import React from 'react';
-import type { Note } from '../types';
+import type { Note, NoteColor } from '../types';
 import { DISC_SIZE, TRACK_COUNT, TRACK_WIDTH, INNER_RADIUS, TRACK_GAP, TRACK_RADII, TRACK_SNAP_ANGLES } from '../constants';
 
 interface DiscProps {
@@ -7,6 +7,7 @@ interface DiscProps {
   rotation: number;
   isPlaying: boolean;
   activeTracks: boolean[];
+  activeColor: NoteColor;
   dragPreview?: { track: number; startAngle: number; durationAngle: number } | null;
   onToggleTrack: (trackIndex: number) => void;
   onDiscMouseDown: (track: number, angle: number) => void;
@@ -71,7 +72,7 @@ const describeArc = (x: number, y: number, radius: number, startAngle: number, e
 };
 
 
-const Disc: React.FC<DiscProps> = ({ notes, rotation, isPlaying, activeTracks, onToggleTrack, onDiscMouseDown, onDiscMouseMove, onDiscMouseUp, onDiscMouseLeave, dragPreview }) => {
+const Disc: React.FC<DiscProps> = ({ notes, rotation, isPlaying, activeTracks, onToggleTrack, onDiscMouseDown, onDiscMouseMove, onDiscMouseUp, onDiscMouseLeave, dragPreview, activeColor }) => {
   const getCoordsFromEvent = (e: React.MouseEvent<SVGSVGElement>): { track: number; angle: number } | null => {
     const svg = e.currentTarget;
     const pt = svg.createSVGPoint();
@@ -181,12 +182,12 @@ const Disc: React.FC<DiscProps> = ({ notes, rotation, isPlaying, activeTracks, o
               const pathData = describeArc(DISC_SIZE / 2, DISC_SIZE / 2, trackRadius, note.angle, note.angle + note.durationAngle);
               return (
                  <g key={note.id} className="pointer-events-none">
-                    {/* Border: Use a slightly thicker path underneath */}
+                    {/* Border */}
                     <path
                         d={pathData}
                         fill="none"
                         stroke={lightenHexColor(note.color, 40)}
-                        strokeWidth={TRACK_WIDTH + 3}
+                        strokeWidth={TRACK_WIDTH + 6}
                         strokeLinecap="round"
                     />
                     {/* Fill */}
@@ -194,7 +195,7 @@ const Disc: React.FC<DiscProps> = ({ notes, rotation, isPlaying, activeTracks, o
                         d={pathData}
                         fill="none"
                         stroke={note.color}
-                        strokeWidth={TRACK_WIDTH - 3}
+                        strokeWidth={TRACK_WIDTH}
                         strokeLinecap="round"
                     />
                 </g>
@@ -221,10 +222,10 @@ const Disc: React.FC<DiscProps> = ({ notes, rotation, isPlaying, activeTracks, o
              <path
                 d={describeArc(DISC_SIZE / 2, DISC_SIZE / 2, TRACK_RADII[dragPreview.track], dragPreview.startAngle, dragPreview.startAngle + dragPreview.durationAngle)}
                 fill="none"
-                stroke="rgba(255, 255, 255, 0.5)"
+                stroke={activeColor.color}
                 strokeWidth={TRACK_WIDTH}
                 strokeLinecap="round"
-                strokeDasharray="10, 10"
+                opacity="0.5"
                 className="pointer-events-none"
               />
           )}

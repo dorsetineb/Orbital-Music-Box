@@ -8,28 +8,24 @@ import { NOTE_COLORS, TRACK_RADII, TRACK_WIDTH, TRACK_SNAP_ANGLES } from './cons
 
 // --- Collision Detection Helpers ---
 const isAngleInArc = (angle: number, arcStart: number, arcDuration: number): boolean => {
-    const arcEnd = arcStart + arcDuration;
-    if (arcEnd > 360) {
-        return angle >= arcStart || angle < (arcEnd % 360);
-    } else {
+    const arcEnd = (arcStart + arcDuration) % 360;
+    if (arcStart < arcEnd) { // No wraparound
         return angle >= arcStart && angle < arcEnd;
+    } else { // Wraparound
+        return angle >= arcStart || angle < arcEnd;
     }
 };
 
 const doArcsOverlap = (start1: number, duration1: number, start2: number, duration2: number): boolean => {
-    const end1 = start1 + duration1;
-    const end2 = start2 + duration2;
-
-    const ranges1 = end1 > 360 ? [{s: start1, e: 360}, {s: 0, e: end1 % 360}] : [{s: start1, e: end1}];
-    const ranges2 = end2 > 360 ? [{s: start2, e: 360}, {s: 0, e: end2 % 360}] : [{s: start2, e: end2}];
-    
-    for (const r1 of ranges1) {
-        for (const r2 of ranges2) {
-            // Standard interval overlap check
-            if (r1.s < r2.e && r1.e > r2.s) {
-                return true;
-            }
-        }
+    // This is a simplified check. A more robust one would handle all wraparound cases.
+    // For now, we check if start of one is in the other, or vice-versa.
+    if (isAngleInArc(start1, start2, duration2) || isAngleInArc(start2, start1, duration1)) {
+        return true;
+    }
+    const end1 = (start1 + duration1) % 360;
+    const end2 = (start2 + duration2) % 360;
+    if (isAngleInArc(end1, start2, duration2) || isAngleInArc(end2, start1, duration1)) {
+        return true;
     }
     return false;
 };
@@ -141,11 +137,18 @@ const App: React.FC = () => {
         const freq = noteDetails.freq * octaveMultiplier;
 
         if (note.durationAngle && note.durationAngle > 0) {
-            // Sustained Note: State-based check for cleaner audio logic
-            // Calculate angular distance of playhead from note's start
-            const playheadRelativeAngle = (playheadPosition - (note.angle + newRotation) + 720) % 360;
-
-            const isCurrentlyActive = playheadRelativeAngle < note.durationAngle;
+            // --- Sustained Note Audio Logic ---
+            const visualStartAngle = (note.angle + newRotation) % 360;
+            const visualEndAngle = (visualStartAngle + note.durationAngle) % 360;
+            
+            let isCurrentlyActive = false;
+            // Check if playhead is within the arc's range
+            if (visualStartAngle < visualEndAngle) { // Arc does not wrap around 0/360
+                isCurrentlyActive = playheadPosition >= visualStartAngle && playheadPosition < visualEndAngle;
+            } else { // Arc wraps around 0/360
+                isCurrentlyActive = playheadPosition >= visualStartAngle || playheadPosition < visualEndAngle;
+            }
+            
             const wasActive = playingSustainedNotesRef.current.has(note.id);
             
             if (isCurrentlyActive && !wasActive) {
@@ -253,16 +256,24 @@ const App: React.FC = () => {
                 if (existingNote.durationAngle && existingNote.durationAngle > 0) { // Existing is an arc
                     return isAngleInArc(angle, existingNote.angle, existingNote.durationAngle);
                 } else { // Existing is a point
-                    return existingNote.angle === angle;
+                    const snapAngleForTrack = TRACK_SNAP_ANGLES[track];
+                    return Math.abs(existingNote.angle - angle) < snapAngleForTrack / 2;
                 }
             }
         });
     };
 
     const { startAngle, currentAngle, track } = dragInfo;
-    const durationAngle = (currentAngle - startAngle + 360) % 360;
+    const snapAngleForTrack = TRACK_SNAP_ANGLES[track];
+    const snappedCurrentAngle = (Math.round(currentAngle / snapAngleForTrack) * snapAngleForTrack);
     
-    if (durationAngle < 5) { // Treat as a click, add regular note
+    let durationAngle = (snappedCurrentAngle - startAngle + 360) % 360;
+    if (durationAngle === 0 && currentAngle !== startAngle) {
+        // Allow a full circle note if dragged all the way around
+        durationAngle = 360;
+    }
+
+    if (durationAngle < snapAngleForTrack / 2) { // Treat as a click, add regular note
         if (!isSlotOccupied(track, startAngle)) {
             const newNote: Note = {
                 id: `note-${Date.now()}-${Math.random()}`,
@@ -319,6 +330,7 @@ const App: React.FC = () => {
               onDiscMouseUp={handleDiscMouseUp}
               onDiscMouseLeave={handleDiscMouseLeave}
               dragPreview={dragPreview}
+              activeColor={activeColor}
             />
         </div>
       </div>
