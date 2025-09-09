@@ -6,6 +6,35 @@ import useAudioEngine from './hooks/useAudioEngine';
 import type { Note, NoteColor, AudioEffects } from './types';
 import { NOTE_COLORS, TRACK_RADII, TRACK_WIDTH, TRACK_SNAP_ANGLES } from './constants';
 
+// --- Collision Detection Helpers ---
+const isAngleInArc = (angle: number, arcStart: number, arcDuration: number): boolean => {
+    const arcEnd = arcStart + arcDuration;
+    if (arcEnd > 360) {
+        return angle >= arcStart || angle < (arcEnd % 360);
+    } else {
+        return angle >= arcStart && angle < arcEnd;
+    }
+};
+
+const doArcsOverlap = (start1: number, duration1: number, start2: number, duration2: number): boolean => {
+    const end1 = start1 + duration1;
+    const end2 = start2 + duration2;
+
+    const ranges1 = end1 > 360 ? [{s: start1, e: 360}, {s: 0, e: end1 % 360}] : [{s: start1, e: end1}];
+    const ranges2 = end2 > 360 ? [{s: start2, e: 360}, {s: 0, e: end2 % 360}] : [{s: start2, e: end2}];
+    
+    for (const r1 of ranges1) {
+        for (const r2 of ranges2) {
+            // Standard interval overlap check
+            if (r1.s < r2.e && r1.e > r2.s) {
+                return true;
+            }
+        }
+    }
+    return false;
+};
+
+
 const App: React.FC = () => {
   const [notes, setNotes] = useState<Note[]>([]);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
@@ -112,28 +141,42 @@ const App: React.FC = () => {
         const freq = noteDetails.freq * octaveMultiplier;
 
         if (note.durationAngle && note.durationAngle > 0) {
-            const startAngle = (note.angle + newRotation) % 360;
-            const endAngle = (startAngle + note.durationAngle);
+            // Sustained Note: Trigger based on leading and trailing edges crossing the playhead
             
-            let isPlayheadInside = false;
-            if (endAngle > 360) {
-                isPlayheadInside = playheadPosition >= startAngle || playheadPosition < (endAngle % 360);
-            } else {
-                isPlayheadInside = playheadPosition >= startAngle && playheadPosition < endAngle;
+            // --- Leading edge crossing (to start note) ---
+            const prevLeadEdge = (note.angle + prevRotation) % 360;
+            const currentLeadEdge = (note.angle + newRotation) % 360;
+            
+            let leadCrossed = false;
+            if (prevLeadEdge < currentLeadEdge) {
+                if (prevLeadEdge < playheadPosition && currentLeadEdge >= playheadPosition) leadCrossed = true;
+            } else if (prevLeadEdge > currentLeadEdge) { 
+                if (prevLeadEdge < playheadPosition || currentLeadEdge >= playheadPosition) leadCrossed = true;
             }
 
-            if (isPlayheadInside) {
-                if (!playingSustainedNotesRef.current.has(note.id)) {
-                    startSustainedNote(freq, note.id);
-                    playingSustainedNotesRef.current.add(note.id);
-                }
-            } else {
-                if (playingSustainedNotesRef.current.has(note.id)) {
-                    stopSustainedNote(note.id);
-                    playingSustainedNotesRef.current.delete(note.id);
-                }
+            if (leadCrossed && !playingSustainedNotesRef.current.has(note.id)) {
+                startSustainedNote(freq, note.id);
+                playingSustainedNotesRef.current.add(note.id);
+            }
+
+            // --- Trailing edge crossing (to stop note) ---
+            const noteEndAngle = note.angle + note.durationAngle;
+            const prevTrailEdge = (noteEndAngle + prevRotation) % 360;
+            const currentTrailEdge = (noteEndAngle + newRotation) % 360;
+
+            let trailCrossed = false;
+            if (prevTrailEdge < currentTrailEdge) {
+                if (prevTrailEdge < playheadPosition && currentTrailEdge >= playheadPosition) trailCrossed = true;
+            } else if (prevTrailEdge > currentTrailEdge) {
+                if (prevTrailEdge < playheadPosition || currentTrailEdge >= playheadPosition) trailCrossed = true;
+            }
+            
+            if (trailCrossed && playingSustainedNotesRef.current.has(note.id)) {
+                stopSustainedNote(note.id);
+                playingSustainedNotesRef.current.delete(note.id);
             }
         } else {
+             // Single Note: Trigger on crossing
             const prevNoteVisualAngle = (note.angle + prevRotation) % 360;
             const currentNoteVisualAngle = (note.angle + newRotation) % 360;
             
@@ -187,12 +230,11 @@ const App: React.FC = () => {
         if (note.track !== track) return false;
         
         if (note.durationAngle && note.durationAngle > 0) {
-            const endAngle = (note.angle + note.durationAngle);
-            if (endAngle > 360) {
-                return angle >= note.angle || angle <= (endAngle % 360);
-            } else {
-                return angle >= note.angle && angle <= endAngle;
-            }
+            // Check if click is near start or end of arc to allow removal
+            const endAngle = (note.angle + note.durationAngle) % 360;
+            const angleDiffStart = Math.min(Math.abs(note.angle - angle), 360 - Math.abs(note.angle - angle));
+            const angleDiffEnd = Math.min(Math.abs(endAngle - angle), 360 - Math.abs(endAngle - angle));
+            return angleDiffStart < noteAngularRadius || angleDiffEnd < noteAngularRadius;
         } else {
             const angleDiff = Math.min(Math.abs(note.angle - angle), 360 - Math.abs(note.angle - angle));
             return angleDiff < noteAngularRadius;
@@ -215,33 +257,53 @@ const App: React.FC = () => {
   const handleDiscMouseUp = useCallback(() => {
     if (!dragInfo) return;
 
+    const isSlotOccupied = (track: number, angle: number, duration: number = 0): boolean => {
+        return notes.some(existingNote => {
+            if (existingNote.track !== track) return false;
+
+            if (duration > 0) { // New is an arc
+                if (existingNote.durationAngle) { // Existing is an arc
+                    return doArcsOverlap(angle, duration, existingNote.angle, existingNote.durationAngle);
+                } else { // Existing is a point
+                    return isAngleInArc(existingNote.angle, angle, duration);
+                }
+            } else { // New is a point
+                if (existingNote.durationAngle) { // Existing is an arc
+                    return isAngleInArc(angle, existingNote.angle, existingNote.durationAngle);
+                } else { // Existing is a point
+                    return existingNote.angle === angle;
+                }
+            }
+        });
+    };
+
+    const snapAngleForTrack = TRACK_SNAP_ANGLES[dragInfo.track];
+    const snappedStartAngle = (Math.round(dragInfo.startAngle / snapAngleForTrack) * snapAngleForTrack) % 360;
     const durationAngle = (dragInfo.currentAngle - dragInfo.startAngle + 360) % 360;
     
     if (durationAngle < 5) { // Treat as a click, add regular note
-        const snapAngleForTrack = TRACK_SNAP_ANGLES[dragInfo.track];
-        const snappedAngle = (Math.round(dragInfo.startAngle / snapAngleForTrack) * snapAngleForTrack) % 360;
-        
-        const isSlotOccupied = notes.some(note => note.track === dragInfo.track && note.angle === snappedAngle && !note.durationAngle);
-        if (!isSlotOccupied) {
+        if (!isSlotOccupied(dragInfo.track, snappedStartAngle)) {
             const newNote: Note = {
                 id: `note-${Date.now()}-${Math.random()}`,
                 track: dragInfo.track,
-                angle: snappedAngle,
+                angle: snappedStartAngle,
                 color: activeColor.color,
                 name: activeColor.name,
             };
             setNotes(prev => [...prev, newNote]);
         }
     } else { // Treat as a drag, add sustained note
-        const newNote: Note = {
-            id: `note-${Date.now()}-${Math.random()}`,
-            track: dragInfo.track,
-            angle: dragInfo.startAngle,
-            durationAngle: durationAngle,
-            color: activeColor.color,
-            name: activeColor.name,
-        };
-        setNotes(prev => [...prev, newNote]);
+        if (!isSlotOccupied(dragInfo.track, snappedStartAngle, durationAngle)) {
+            const newNote: Note = {
+                id: `note-${Date.now()}-${Math.random()}`,
+                track: dragInfo.track,
+                angle: snappedStartAngle,
+                durationAngle: durationAngle,
+                color: activeColor.color,
+                name: activeColor.name,
+            };
+            setNotes(prev => [...prev, newNote]);
+        }
     }
 
     setDragInfo(null);
@@ -253,7 +315,7 @@ const App: React.FC = () => {
 
   const dragPreview = dragInfo ? {
       track: dragInfo.track,
-      startAngle: dragInfo.startAngle,
+      startAngle: (Math.round(dragInfo.startAngle / TRACK_SNAP_ANGLES[dragInfo.track]) * TRACK_SNAP_ANGLES[dragInfo.track]) % 360,
       durationAngle: (dragInfo.currentAngle - dragInfo.startAngle + 360) % 360
   } : null;
 

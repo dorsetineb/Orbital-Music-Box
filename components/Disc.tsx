@@ -91,7 +91,7 @@ const Disc: React.FC<DiscProps> = ({ notes, rotation, isPlaying, activeTracks, o
       angle += 360;
     }
 
-    const currentDiscRotation = rotation;
+    const currentDiscRotation = isPlaying ? rotation : 0;
     const adjustedAngle = (angle - currentDiscRotation + 360) % 360;
     
     for (let i = 0; i < TRACK_COUNT; i++) {
@@ -180,15 +180,24 @@ const Disc: React.FC<DiscProps> = ({ notes, rotation, isPlaying, activeTracks, o
             if (note.durationAngle && note.durationAngle > 0) {
               const pathData = describeArc(DISC_SIZE / 2, DISC_SIZE / 2, trackRadius, note.angle, note.angle + note.durationAngle);
               return (
-                 <path
-                    key={note.id}
-                    d={pathData}
-                    fill="none"
-                    stroke={note.color}
-                    strokeWidth={TRACK_WIDTH}
-                    strokeLinecap="round"
-                    className="pointer-events-none"
-                  />
+                 <g key={note.id} className="pointer-events-none">
+                    {/* Stroke */}
+                    <path
+                        d={pathData}
+                        fill="none"
+                        stroke={lightenHexColor(note.color, 40)}
+                        strokeWidth={TRACK_WIDTH + 3}
+                        strokeLinecap="round"
+                    />
+                    {/* Fill */}
+                    <path
+                        d={pathData}
+                        fill="none"
+                        stroke={note.color}
+                        strokeWidth={TRACK_WIDTH - 3}
+                        strokeLinecap="round"
+                    />
+                </g>
               );
             } else {
               const x = DISC_SIZE / 2 + trackRadius * Math.cos(note.angle * Math.PI / 180);
