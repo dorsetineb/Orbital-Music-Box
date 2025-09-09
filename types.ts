@@ -2,7 +2,8 @@
 export interface Note {
   id: string;
   track: number; // 0-indexed from the outermost track
-  angle: number; // in degrees (0-360)
+  angle: number; // in degrees (0-360). For sustained notes, this is the start angle.
+  durationAngle?: number; // Optional: The length of the note in degrees.
   color: string;
   name: string;
 }

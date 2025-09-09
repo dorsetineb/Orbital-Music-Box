@@ -6,10 +6,15 @@ interface DiscProps {
   notes: Note[];
   rotation: number;
   isPlaying: boolean;
-  onAddOrRemoveNote: (track: number, angle: number) => void;
   activeTracks: boolean[];
+  dragPreview?: { track: number; startAngle: number; durationAngle: number } | null;
   onToggleTrack: (trackIndex: number) => void;
+  onDiscMouseDown: (track: number, angle: number) => void;
+  onDiscMouseMove: (track: number, angle: number) => void;
+  onDiscMouseUp: () => void;
+  onDiscMouseLeave: () => void;
 }
+
 
 const lightenHexColor = (hex: string, percent: number): string => {
     if (!hex.startsWith('#') || (hex.length !== 4 && hex.length !== 7)) return hex;
@@ -34,11 +39,40 @@ const lightenHexColor = (hex: string, percent: number): string => {
     return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
 };
 
+// --- SVG Arc Helpers ---
+const polarToCartesian = (centerX: number, centerY: number, radius: number, angleInDegrees: number) => {
+    const angleInRadians = ((angleInDegrees - 90) * Math.PI) / 180.0;
+    return {
+        x: centerX + radius * Math.cos(angleInRadians),
+        y: centerY + radius * Math.sin(angleInRadians),
+    };
+};
 
-const Disc: React.FC<DiscProps> = ({ notes, rotation, isPlaying, onAddOrRemoveNote, activeTracks, onToggleTrack }) => {
-  const handleClick = (e: React.MouseEvent<SVGSVGElement>) => {
-    if (isPlaying) return; // Prevent adding/removing notes while playing
+const describeArc = (x: number, y: number, radius: number, startAngle: number, endAngle: number): string => {
+    // Ensure endAngle is greater for calculation, handling full circles
+    if (endAngle <= startAngle) {
+        endAngle += 360;
+    }
+    if (endAngle >= startAngle + 360) {
+        endAngle = startAngle + 359.99;
+    }
 
+    const start = polarToCartesian(x, y, radius, startAngle);
+    const end = polarToCartesian(x, y, radius, endAngle);
+    
+    const largeArcFlag = endAngle - startAngle <= 180 ? '0' : '1';
+    
+    const d = [
+        'M', start.x, start.y,
+        'A', radius, radius, 0, largeArcFlag, 1, end.x, end.y,
+    ].join(' ');
+
+    return d;
+};
+
+
+const Disc: React.FC<DiscProps> = ({ notes, rotation, isPlaying, activeTracks, onToggleTrack, onDiscMouseDown, onDiscMouseMove, onDiscMouseUp, onDiscMouseLeave, dragPreview }) => {
+  const getCoordsFromEvent = (e: React.MouseEvent<SVGSVGElement>): { track: number; angle: number } | null => {
     const svg = e.currentTarget;
     const pt = svg.createSVGPoint();
     pt.x = e.clientX;
@@ -60,17 +94,30 @@ const Disc: React.FC<DiscProps> = ({ notes, rotation, isPlaying, onAddOrRemoveNo
     const currentDiscRotation = rotation;
     const adjustedAngle = (angle - currentDiscRotation + 360) % 360;
     
-    // Tracks are ordered from inner to outer for radius calculation
     for (let i = 0; i < TRACK_COUNT; i++) {
-        // Here, `i` corresponds to the visual track from the center (0=inner)
         const trackStartRadius = INNER_RADIUS + i * (TRACK_WIDTH + TRACK_GAP);
         const trackEndRadius = trackStartRadius + TRACK_WIDTH;
         if (distance >= trackStartRadius && distance <= trackEndRadius) {
-            // Convert visual track index `i` to logical track index (0 = outermost)
-            onAddOrRemoveNote(TRACK_COUNT - 1 - i, adjustedAngle);
-            break;
+            return { track: TRACK_COUNT - 1 - i, angle: adjustedAngle };
         }
     }
+    return null;
+  };
+
+  const handleMouseDown = (e: React.MouseEvent<SVGSVGElement>) => {
+      if (isPlaying) return;
+      const coords = getCoordsFromEvent(e);
+      if (coords) {
+          onDiscMouseDown(coords.track, coords.angle);
+      }
+  };
+  
+  const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
+      if (isPlaying) return;
+      const coords = getCoordsFromEvent(e);
+      if (coords) {
+          onDiscMouseMove(coords.track, coords.angle);
+      }
   };
   
   // These variables define the playhead as if it were drawn horizontally to the right
@@ -85,7 +132,10 @@ const Disc: React.FC<DiscProps> = ({ notes, rotation, isPlaying, onAddOrRemoveNo
     <div className="w-full h-full">
       <svg
         viewBox={`-10 -10 ${DISC_SIZE + 20} ${DISC_SIZE + 20}`}
-        onClick={handleClick}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={onDiscMouseUp}
+        onMouseLeave={onDiscMouseLeave}
         className={isPlaying ? 'cursor-default' : 'cursor-pointer'}
         style={{ width: '100%', height: '100%' }}
       >
@@ -127,21 +177,48 @@ const Disc: React.FC<DiscProps> = ({ notes, rotation, isPlaying, onAddOrRemoveNo
           {/* Notes */}
           {notes.map(note => {
             const trackRadius = TRACK_RADII[note.track];
-            const x = DISC_SIZE / 2 + trackRadius * Math.cos(note.angle * Math.PI / 180);
-            const y = DISC_SIZE / 2 + trackRadius * Math.sin(note.angle * Math.PI / 180);
-            return (
-              <circle
-                key={note.id}
-                cx={x}
-                cy={y}
-                r={TRACK_WIDTH / 2}
-                fill={note.color}
-                stroke={lightenHexColor(note.color, 40)}
-                strokeWidth={3}
+            if (note.durationAngle && note.durationAngle > 0) {
+              const pathData = describeArc(DISC_SIZE / 2, DISC_SIZE / 2, trackRadius, note.angle, note.angle + note.durationAngle);
+              return (
+                 <path
+                    key={note.id}
+                    d={pathData}
+                    fill="none"
+                    stroke={note.color}
+                    strokeWidth={TRACK_WIDTH}
+                    strokeLinecap="round"
+                    className="pointer-events-none"
+                  />
+              );
+            } else {
+              const x = DISC_SIZE / 2 + trackRadius * Math.cos(note.angle * Math.PI / 180);
+              const y = DISC_SIZE / 2 + trackRadius * Math.sin(note.angle * Math.PI / 180);
+              return (
+                <circle
+                  key={note.id}
+                  cx={x}
+                  cy={y}
+                  r={TRACK_WIDTH / 2}
+                  fill={note.color}
+                  stroke={lightenHexColor(note.color, 40)}
+                  strokeWidth={3}
+                  className="pointer-events-none"
+                />
+              );
+            }
+          })}
+          {/* Drag Preview */}
+          {dragPreview && dragPreview.durationAngle > 5 && (
+             <path
+                d={describeArc(DISC_SIZE / 2, DISC_SIZE / 2, TRACK_RADII[dragPreview.track], dragPreview.startAngle, dragPreview.startAngle + dragPreview.durationAngle)}
+                fill="none"
+                stroke="rgba(255, 255, 255, 0.5)"
+                strokeWidth={TRACK_WIDTH}
+                strokeLinecap="round"
+                strokeDasharray="10, 10"
                 className="pointer-events-none"
               />
-            );
-          })}
+          )}
         </g>
 
         {/* --- SVG Playhead --- */}

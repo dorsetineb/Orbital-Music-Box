@@ -46,6 +46,8 @@ const useAudioEngine = () => {
   const audioChunksRef = useRef<Blob[]>([]);
   const destinationNodeRef = useRef<MediaStreamAudioDestinationNode | null>(null);
   const prevEffectsRef = useRef<AudioEffects | null>(null);
+  const activeSourcesRef = useRef(new Map<string, { oscillator: OscillatorNode, gainNode: GainNode }>());
+
 
   // Effect nodes
   const effectsChainRef = useRef<{
@@ -273,6 +275,42 @@ const useAudioEngine = () => {
     oscillator.stop(audioCtx.currentTime + 0.5);
   }, []);
 
+  const startSustainedNote = useCallback((frequency: number, noteId: string) => {
+    const audioCtx = audioCtxRef.current;
+    const effectsInput = effectsChainRef.current.input;
+
+    if (!audioCtx || audioCtx.state !== 'running' || !effectsInput || activeSourcesRef.current.has(noteId)) {
+        return;
+    }
+
+    const oscillator = audioCtx.createOscillator();
+    const gainNode = audioCtx.createGain();
+
+    oscillator.type = 'sine';
+    oscillator.frequency.setValueAtTime(frequency, audioCtx.currentTime);
+    
+    gainNode.gain.setValueAtTime(0, audioCtx.currentTime);
+    gainNode.gain.linearRampToValueAtTime(0.5, audioCtx.currentTime + 0.05); // Quick fade-in
+
+    oscillator.connect(gainNode).connect(effectsInput);
+    oscillator.start(audioCtx.currentTime);
+
+    activeSourcesRef.current.set(noteId, { oscillator, gainNode });
+  }, []);
+
+  const stopSustainedNote = useCallback((noteId: string) => {
+      const audioCtx = audioCtxRef.current;
+      const source = activeSourcesRef.current.get(noteId);
+
+      if (audioCtx && source) {
+          const { oscillator, gainNode } = source;
+          const stopTime = audioCtx.currentTime + 0.1;
+          gainNode.gain.exponentialRampToValueAtTime(0.0001, stopTime);
+          oscillator.stop(stopTime);
+          activeSourcesRef.current.delete(noteId);
+      }
+  }, []);
+
   const startRecording = useCallback(() => {
     const audioCtx = audioCtxRef.current;
     if (!destinationNodeRef.current || !audioCtx || audioCtx.state !== 'running') return;
@@ -306,7 +344,7 @@ const useAudioEngine = () => {
     });
   }, []);
 
-  return { playNote, startRecording, stopRecording, isRecording, resumeAudio, updateEffects };
+  return { playNote, startSustainedNote, stopSustainedNote, startRecording, stopRecording, isRecording, resumeAudio, updateEffects };
 };
 
 export default useAudioEngine;
