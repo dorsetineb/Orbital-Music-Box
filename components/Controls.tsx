@@ -1,7 +1,7 @@
 import React from 'react';
 import type { NoteColor } from '../types';
 import { NOTE_COLORS } from '../constants';
-import { PlayIcon, PauseIcon, RecordIcon, ClearIcon, DownloadIcon, EffectsIcon } from './icons';
+import { PlayIcon, PauseIcon, RecordIcon, ClearIcon, DownloadIcon, EffectsIcon, SustainedNoteIcon } from './icons';
 
 interface ControlsProps {
   isPlaying: boolean;
@@ -10,12 +10,14 @@ interface ControlsProps {
   activeColor: NoteColor;
   recordedUrl: string | null;
   isEffectsPanelOpen: boolean;
+  isSustainedMode: boolean;
   onPlayPause: () => void;
   onRecord: () => void;
   onSpeedChange: (speed: number) => void;
   onColorSelect: (color: NoteColor) => void;
   onClear: () => void;
   onToggleEffectsPanel: () => void;
+  onSustainedModeToggle: () => void;
 }
 
 const Controls: React.FC<ControlsProps> = (props) => {
@@ -26,12 +28,14 @@ const Controls: React.FC<ControlsProps> = (props) => {
     activeColor,
     recordedUrl,
     isEffectsPanelOpen,
+    isSustainedMode,
     onPlayPause,
     onRecord,
     onSpeedChange,
     onColorSelect,
     onClear,
-    onToggleEffectsPanel
+    onToggleEffectsPanel,
+    onSustainedModeToggle
   } = props;
 
   return (
@@ -69,8 +73,11 @@ const Controls: React.FC<ControlsProps> = (props) => {
             >
                 <RecordIcon isRecording={isRecording} />
             </button>
-             <button onClick={onClear} className="p-3 bg-gray-700 rounded-full hover:bg-yellow-500 transition-colors" disabled={isRecording} aria-label="Clear all notes">
+             <button onClick={onClear} className="p-3 bg-gray-700 rounded-full hover:bg-yellow-500 transition-colors" disabled={isRecording || isSustainedMode} aria-label="Clear all notes">
                 <ClearIcon />
+            </button>
+            <button onClick={onSustainedModeToggle} className={`p-3 rounded-full transition-colors ${isSustainedMode ? 'bg-cyan-500' : 'bg-gray-700 hover:bg-cyan-600'}`} aria-label="Toggle sustained note mode" disabled={isPlaying || isRecording}>
+                <SustainedNoteIcon />
             </button>
             <button onClick={onToggleEffectsPanel} className={`p-3 rounded-full transition-colors ${isEffectsPanelOpen ? 'bg-cyan-500' : 'bg-gray-700 hover:bg-cyan-600'}`} aria-label="Toggle effects panel">
                 <EffectsIcon />

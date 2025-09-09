@@ -266,13 +266,13 @@ const useAudioEngine = () => {
     oscillator.type = 'sine';
     oscillator.frequency.setValueAtTime(frequency, audioCtx.currentTime);
     
-    gainNode.gain.setValueAtTime(0.5, audioCtx.currentTime);
-    gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.5);
+    gainNode.gain.setValueAtTime(0.8, audioCtx.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.8);
 
     oscillator.connect(gainNode).connect(effectsInput);
 
     oscillator.start(audioCtx.currentTime);
-    oscillator.stop(audioCtx.currentTime + 0.5);
+    oscillator.stop(audioCtx.currentTime + 0.8);
   }, []);
 
   const startSustainedNote = useCallback((frequency: number, noteId: string) => {
@@ -290,7 +290,7 @@ const useAudioEngine = () => {
     oscillator.frequency.setValueAtTime(frequency, audioCtx.currentTime);
     
     gainNode.gain.setValueAtTime(0, audioCtx.currentTime);
-    gainNode.gain.linearRampToValueAtTime(0.5, audioCtx.currentTime + 0.05); // Quick fade-in
+    gainNode.gain.linearRampToValueAtTime(0.8, audioCtx.currentTime + 0.1); // Quick but smooth fade-in
 
     oscillator.connect(gainNode).connect(effectsInput);
     oscillator.start(audioCtx.currentTime);
@@ -304,8 +304,10 @@ const useAudioEngine = () => {
 
       if (audioCtx && source) {
           const { oscillator, gainNode } = source;
-          const stopTime = audioCtx.currentTime + 0.1;
-          gainNode.gain.exponentialRampToValueAtTime(0.0001, stopTime);
+          const stopTime = audioCtx.currentTime + 0.25; // Slower, smoother fade out
+          // Use linear ramp to 0 to prevent clicks. Exponential ramp can't target 0.
+          gainNode.gain.setValueAtTime(gainNode.gain.value, audioCtx.currentTime); // Hold current value before ramping
+          gainNode.gain.linearRampToValueAtTime(0.0001, stopTime); 
           oscillator.stop(stopTime);
           activeSourcesRef.current.delete(noteId);
       }

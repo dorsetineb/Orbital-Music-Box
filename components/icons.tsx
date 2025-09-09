@@ -59,3 +59,11 @@ export const EffectsIcon: React.FC = () => (
         <line x1="17" y1="16" x2="23" y2="16"></line>
     </svg>
 );
+
+export const SustainedNoteIcon: React.FC = () => (
+    <svg {...iconProps} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M4 12c0-4.42 3.58-8 8-8s8 3.58 8 8" />
+        <circle cx="4" cy="12" r="2" fill="currentColor" />
+        <circle cx="20" cy="12" r="2" fill="currentColor" />
+    </svg>
+);

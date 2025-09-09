@@ -8,12 +8,9 @@ interface DiscProps {
   isPlaying: boolean;
   activeTracks: boolean[];
   activeColor: NoteColor;
-  dragPreview?: { track: number; startAngle: number; durationAngle: number } | null;
+  sustainedNoteStartPoint?: { track: number; angle: number } | null;
   onToggleTrack: (trackIndex: number) => void;
-  onDiscMouseDown: (track: number, angle: number) => void;
-  onDiscMouseMove: (track: number, angle: number) => void;
-  onDiscMouseUp: () => void;
-  onDiscMouseLeave: () => void;
+  onDiscClick: (track: number, angle: number) => void;
 }
 
 
@@ -72,7 +69,7 @@ const describeArc = (x: number, y: number, radius: number, startAngle: number, e
 };
 
 
-const Disc: React.FC<DiscProps> = ({ notes, rotation, isPlaying, activeTracks, onToggleTrack, onDiscMouseDown, onDiscMouseMove, onDiscMouseUp, onDiscMouseLeave, dragPreview, activeColor }) => {
+const Disc: React.FC<DiscProps> = ({ notes, rotation, isPlaying, activeTracks, onToggleTrack, onDiscClick, sustainedNoteStartPoint, activeColor }) => {
   const getCoordsFromEvent = (e: React.MouseEvent<SVGSVGElement>): { track: number; angle: number } | null => {
     const svg = e.currentTarget;
     const pt = svg.createSVGPoint();
@@ -105,19 +102,11 @@ const Disc: React.FC<DiscProps> = ({ notes, rotation, isPlaying, activeTracks, o
     return null;
   };
 
-  const handleMouseDown = (e: React.MouseEvent<SVGSVGElement>) => {
+  const handleClick = (e: React.MouseEvent<SVGSVGElement>) => {
       if (isPlaying) return;
       const coords = getCoordsFromEvent(e);
       if (coords) {
-          onDiscMouseDown(coords.track, coords.angle);
-      }
-  };
-  
-  const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
-      if (isPlaying) return;
-      const coords = getCoordsFromEvent(e);
-      if (coords) {
-          onDiscMouseMove(coords.track, coords.angle);
+          onDiscClick(coords.track, coords.angle);
       }
   };
   
@@ -133,10 +122,7 @@ const Disc: React.FC<DiscProps> = ({ notes, rotation, isPlaying, activeTracks, o
     <div className="w-full h-full">
       <svg
         viewBox={`-10 -10 ${DISC_SIZE + 20} ${DISC_SIZE + 20}`}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={onDiscMouseUp}
-        onMouseLeave={onDiscMouseLeave}
+        onClick={handleClick}
         className={isPlaying ? 'cursor-default' : 'cursor-pointer'}
         style={{ width: '100%', height: '100%' }}
       >
@@ -217,17 +203,25 @@ const Disc: React.FC<DiscProps> = ({ notes, rotation, isPlaying, activeTracks, o
               );
             }
           })}
-          {/* Drag Preview */}
-          {dragPreview && dragPreview.durationAngle > 5 && (
-             <path
-                d={describeArc(DISC_SIZE / 2, DISC_SIZE / 2, TRACK_RADII[dragPreview.track], dragPreview.startAngle, dragPreview.startAngle + dragPreview.durationAngle)}
-                fill="none"
-                stroke={activeColor.color}
-                strokeWidth={TRACK_WIDTH}
-                strokeLinecap="round"
-                opacity="0.5"
-                className="pointer-events-none"
-              />
+          {/* Sustained Note Start Point Marker */}
+          {sustainedNoteStartPoint && (
+              (() => {
+                  const trackRadius = TRACK_RADII[sustainedNoteStartPoint.track];
+                  const x = DISC_SIZE / 2 + trackRadius * Math.cos(sustainedNoteStartPoint.angle * Math.PI / 180);
+                  const y = DISC_SIZE / 2 + trackRadius * Math.sin(sustainedNoteStartPoint.angle * Math.PI / 180);
+                  return (
+                      <circle
+                          cx={x}
+                          cy={y}
+                          r={TRACK_WIDTH / 2}
+                          fill="none"
+                          stroke={activeColor.color}
+                          strokeWidth={3}
+                          strokeDasharray="5 5"
+                          className="pointer-events-none animate-pulse"
+                      />
+                  );
+              })()
           )}
         </g>
 
