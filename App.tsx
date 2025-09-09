@@ -201,7 +201,7 @@ const App: React.FC = () => {
   return (
     <div className="bg-gray-900 text-white min-h-screen flex flex-col items-center justify-center p-4 font-sans select-none overflow-hidden">
         <header className="absolute top-0 left-0 p-6">
-            <h1 className="text-3xl font-bold text-gray-200">Orbital Music Box</h1>
+            <h1 className="text-3xl font-bold text-gray-200">Disqif-AI</h1>
         </header>
 
       <div className="w-full flex-1 flex items-center justify-center relative">

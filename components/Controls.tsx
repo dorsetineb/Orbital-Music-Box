@@ -76,7 +76,7 @@ const Controls: React.FC<ControlsProps> = (props) => {
                 <EffectsIcon />
             </button>
             {recordedUrl && (
-                <a href={recordedUrl} download={`orbital-music-box-${Date.now()}.webm`} className="p-3 bg-green-600 rounded-full hover:bg-green-500 transition-colors" aria-label="Download recording">
+                <a href={recordedUrl} download={`disqif-ai-${Date.now()}.webm`} className="p-3 bg-green-600 rounded-full hover:bg-green-500 transition-colors" aria-label="Download recording">
                     <DownloadIcon />
                 </a>
             )}
