@@ -181,7 +181,7 @@ const Disc: React.FC<DiscProps> = ({ notes, rotation, isPlaying, activeTracks, o
               const pathData = describeArc(DISC_SIZE / 2, DISC_SIZE / 2, trackRadius, note.angle, note.angle + note.durationAngle);
               return (
                  <g key={note.id} className="pointer-events-none">
-                    {/* Stroke */}
+                    {/* Border: Use a slightly thicker path underneath */}
                     <path
                         d={pathData}
                         fill="none"

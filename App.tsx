@@ -141,37 +141,17 @@ const App: React.FC = () => {
         const freq = noteDetails.freq * octaveMultiplier;
 
         if (note.durationAngle && note.durationAngle > 0) {
-            // Sustained Note: Trigger based on leading and trailing edges crossing the playhead
-            
-            // --- Leading edge crossing (to start note) ---
-            const prevLeadEdge = (note.angle + prevRotation) % 360;
-            const currentLeadEdge = (note.angle + newRotation) % 360;
-            
-            let leadCrossed = false;
-            if (prevLeadEdge < currentLeadEdge) {
-                if (prevLeadEdge < playheadPosition && currentLeadEdge >= playheadPosition) leadCrossed = true;
-            } else if (prevLeadEdge > currentLeadEdge) { 
-                if (prevLeadEdge < playheadPosition || currentLeadEdge >= playheadPosition) leadCrossed = true;
-            }
+            // Sustained Note: State-based check for cleaner audio logic
+            // Calculate angular distance of playhead from note's start
+            const playheadRelativeAngle = (playheadPosition - (note.angle + newRotation) + 720) % 360;
 
-            if (leadCrossed && !playingSustainedNotesRef.current.has(note.id)) {
+            const isCurrentlyActive = playheadRelativeAngle < note.durationAngle;
+            const wasActive = playingSustainedNotesRef.current.has(note.id);
+            
+            if (isCurrentlyActive && !wasActive) {
                 startSustainedNote(freq, note.id);
                 playingSustainedNotesRef.current.add(note.id);
-            }
-
-            // --- Trailing edge crossing (to stop note) ---
-            const noteEndAngle = note.angle + note.durationAngle;
-            const prevTrailEdge = (noteEndAngle + prevRotation) % 360;
-            const currentTrailEdge = (noteEndAngle + newRotation) % 360;
-
-            let trailCrossed = false;
-            if (prevTrailEdge < currentTrailEdge) {
-                if (prevTrailEdge < playheadPosition && currentTrailEdge >= playheadPosition) trailCrossed = true;
-            } else if (prevTrailEdge > currentTrailEdge) {
-                if (prevTrailEdge < playheadPosition || currentTrailEdge >= playheadPosition) trailCrossed = true;
-            }
-            
-            if (trailCrossed && playingSustainedNotesRef.current.has(note.id)) {
+            } else if (!isCurrentlyActive && wasActive) {
                 stopSustainedNote(note.id);
                 playingSustainedNotesRef.current.delete(note.id);
             }
@@ -244,7 +224,9 @@ const App: React.FC = () => {
     if (noteToRemove) {
         setNotes(prev => prev.filter(n => n.id !== noteToRemove.id));
     } else {
-        setDragInfo({ startAngle: angle, currentAngle: angle, track });
+        const snapAngleForTrack = TRACK_SNAP_ANGLES[track];
+        const snappedAngle = (Math.round(angle / snapAngleForTrack) * snapAngleForTrack) % 360;
+        setDragInfo({ startAngle: snappedAngle, currentAngle: snappedAngle, track });
     }
   }, [isPlaying, notes, resumeAudio]);
 
@@ -262,13 +244,13 @@ const App: React.FC = () => {
             if (existingNote.track !== track) return false;
 
             if (duration > 0) { // New is an arc
-                if (existingNote.durationAngle) { // Existing is an arc
+                if (existingNote.durationAngle && existingNote.durationAngle > 0) { // Existing is an arc
                     return doArcsOverlap(angle, duration, existingNote.angle, existingNote.durationAngle);
                 } else { // Existing is a point
                     return isAngleInArc(existingNote.angle, angle, duration);
                 }
             } else { // New is a point
-                if (existingNote.durationAngle) { // Existing is an arc
+                if (existingNote.durationAngle && existingNote.durationAngle > 0) { // Existing is an arc
                     return isAngleInArc(angle, existingNote.angle, existingNote.durationAngle);
                 } else { // Existing is a point
                     return existingNote.angle === angle;
@@ -277,27 +259,26 @@ const App: React.FC = () => {
         });
     };
 
-    const snapAngleForTrack = TRACK_SNAP_ANGLES[dragInfo.track];
-    const snappedStartAngle = (Math.round(dragInfo.startAngle / snapAngleForTrack) * snapAngleForTrack) % 360;
-    const durationAngle = (dragInfo.currentAngle - dragInfo.startAngle + 360) % 360;
+    const { startAngle, currentAngle, track } = dragInfo;
+    const durationAngle = (currentAngle - startAngle + 360) % 360;
     
     if (durationAngle < 5) { // Treat as a click, add regular note
-        if (!isSlotOccupied(dragInfo.track, snappedStartAngle)) {
+        if (!isSlotOccupied(track, startAngle)) {
             const newNote: Note = {
                 id: `note-${Date.now()}-${Math.random()}`,
-                track: dragInfo.track,
-                angle: snappedStartAngle,
+                track: track,
+                angle: startAngle,
                 color: activeColor.color,
                 name: activeColor.name,
             };
             setNotes(prev => [...prev, newNote]);
         }
     } else { // Treat as a drag, add sustained note
-        if (!isSlotOccupied(dragInfo.track, snappedStartAngle, durationAngle)) {
+        if (!isSlotOccupied(track, startAngle, durationAngle)) {
             const newNote: Note = {
                 id: `note-${Date.now()}-${Math.random()}`,
-                track: dragInfo.track,
-                angle: snappedStartAngle,
+                track: track,
+                angle: startAngle,
                 durationAngle: durationAngle,
                 color: activeColor.color,
                 name: activeColor.name,
@@ -315,7 +296,7 @@ const App: React.FC = () => {
 
   const dragPreview = dragInfo ? {
       track: dragInfo.track,
-      startAngle: (Math.round(dragInfo.startAngle / TRACK_SNAP_ANGLES[dragInfo.track]) * TRACK_SNAP_ANGLES[dragInfo.track]) % 360,
+      startAngle: dragInfo.startAngle, // Already snapped
       durationAngle: (dragInfo.currentAngle - dragInfo.startAngle + 360) % 360
   } : null;
 
