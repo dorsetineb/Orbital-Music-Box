@@ -49,6 +49,11 @@ const findNoteAt = (notes: Note[], track: number, angle: number): Note | null =>
     return null;
 };
 
+interface DragState {
+  startTrack: number;
+  startAngle: number;
+  currentAngle: number;
+}
 
 const App: React.FC = () => {
   const [notes, setNotes] = useState<Note[]>([]);
@@ -59,10 +64,8 @@ const App: React.FC = () => {
   const [recordedUrl, setRecordedUrl] = useState<string | null>(null);
   const [activeTracks, setActiveTracks] = useState<boolean[]>([true, true, true, true]);
   const [isEffectsPanelOpen, setIsEffectsPanelOpen] = useState<boolean>(false);
+  const [dragState, setDragState] = useState<DragState | null>(null);
   
-  const [isSustainedMode, setIsSustainedMode] = useState<boolean>(false);
-  const [sustainedNoteStartPoint, setSustainedNoteStartPoint] = useState<{ track: number; angle: number } | null>(null);
-
   const [effects, setEffects] = useState<AudioEffects>({
     reverbMix: 0,
     reverbType: 'medium',
@@ -124,7 +127,6 @@ const App: React.FC = () => {
 
   const handleClear = () => {
     setNotes([]);
-    setSustainedNoteStartPoint(null);
   }
 
   const handleToggleTrack = (trackIndex: number) => {
@@ -141,11 +143,6 @@ const App: React.FC = () => {
   
   const handleToggleEffectsPanel = () => {
       setIsEffectsPanelOpen(prev => !prev);
-  };
-
-  const handleSustainedModeToggle = () => {
-    setIsSustainedMode(prev => !prev);
-    setSustainedNoteStartPoint(null); // Reset on mode change
   };
 
   const animate = useCallback(() => {
@@ -190,13 +187,10 @@ const App: React.FC = () => {
             // --- Single Note Audio Logic (Rewritten for accuracy) ---
             const prevNoteVisualAngle = (note.angle + prevRotation) % 360;
             
-            // Calculate how far the disc rotated in this frame
             const rotationIncrement = (newRotation - prevRotation + 360) % 360;
             
-            // Calculate the note's angle relative to the playhead at the start of the frame
             const angleToPlayhead = (playheadPosition - prevNoteVisualAngle + 360) % 360;
 
-            // If the note was before the playhead and the rotation increment crossed it, trigger play
             const crossed = angleToPlayhead > 0 && angleToPlayhead <= rotationIncrement;
 
             if (crossed) {
@@ -231,90 +225,83 @@ const App: React.FC = () => {
     };
   }, [isPlaying, animate, stopSustainedNote]);
 
-  const handleDiscClick = useCallback(async (track: number, angle: number) => {
-    if (isPlaying) return;
-    await resumeAudio();
+    const handleMouseDown = useCallback(async (track: number, angle: number) => {
+        if (isPlaying) return;
+        await resumeAudio();
 
-    // First, check if we're clicking on an existing note to remove it.
-    const noteToRemove = findNoteAt(notes, track, angle);
-    if (noteToRemove) {
-        setNotes(prev => prev.filter(n => n.id !== noteToRemove.id));
-        setSustainedNoteStartPoint(null); // Cancel sustained note creation
-        return;
-    }
+        const noteToRemove = findNoteAt(notes, track, angle);
+        if (noteToRemove) {
+            setNotes(prev => prev.filter(n => n.id !== noteToRemove.id));
+            return; 
+        }
 
-    const isSlotOccupied = (checkTrack: number, checkAngle: number, duration: number = 0): boolean => {
-        return notes.some(existingNote => {
-            if (existingNote.track !== checkTrack) return false;
+        const snapAngleForTrack = TRACK_SNAP_ANGLES[track];
+        const snappedAngle = (Math.round(angle / snapAngleForTrack) * snapAngleForTrack) % 360;
 
-            if (duration > 0) { // New is an arc
-                if (existingNote.durationAngle && existingNote.durationAngle > 0) { // Existing is an arc
-                    return doArcsOverlap(checkAngle, duration, existingNote.angle, existingNote.durationAngle);
-                } else { // Existing is a point
-                    return isAngleInArc(existingNote.angle, checkAngle, duration);
-                }
-            } else { // New is a point
-                if (existingNote.durationAngle && existingNote.durationAngle > 0) { // Existing is an arc
-                    return isAngleInArc(checkAngle, existingNote.angle, existingNote.durationAngle);
-                } else { // Existing is a point
-                    const snapAngleForTrack = TRACK_SNAP_ANGLES[checkTrack];
-                    return Math.abs(existingNote.angle - checkAngle) < snapAngleForTrack / 2;
-                }
-            }
+        if (findNoteAt(notes, track, snappedAngle)) {
+            return; 
+        }
+        
+        setDragState({
+            startTrack: track,
+            startAngle: snappedAngle,
+            currentAngle: snappedAngle,
         });
-    };
+    }, [isPlaying, notes, resumeAudio]);
 
-    // If not removing, proceed to add a note.
-    const snapAngleForTrack = TRACK_SNAP_ANGLES[track];
-    const snappedAngle = (Math.round(angle / snapAngleForTrack) * snapAngleForTrack) % 360;
+    const handleMouseMove = useCallback((track: number, angle: number) => {
+        if (!dragState) return;
+        if (track !== dragState.startTrack) {
+            setDragState(null);
+            return;
+        }
+        setDragState(prev => prev ? { ...prev, currentAngle: angle } : null);
+    }, [dragState]);
 
-    if (isSustainedMode) {
-        if (!sustainedNoteStartPoint) {
-            // First click: Set start point if the spot is free
-            if (!isSlotOccupied(track, snappedAngle)) {
-                setSustainedNoteStartPoint({ track, angle: snappedAngle });
-            }
-        } else {
-            // Second click: Create sustained note
-            if (sustainedNoteStartPoint.track !== track) {
-                // Mismatched track, start over on the new track
-                 if (!isSlotOccupied(track, snappedAngle)) {
-                    setSustainedNoteStartPoint({ track, angle: snappedAngle });
+    const handleMouseUp = useCallback(() => {
+        if (!dragState) return;
+
+        const { startTrack, startAngle, currentAngle } = dragState;
+
+        const isSlotOccupied = (checkTrack: number, checkAngle: number, duration: number = 0): boolean => {
+            return notes.some(existingNote => {
+                if (existingNote.track !== checkTrack) return false;
+
+                if (duration > 0) {
+                    if (existingNote.durationAngle && existingNote.durationAngle > 0) {
+                        return doArcsOverlap(checkAngle, duration, existingNote.angle, existingNote.durationAngle);
+                    } else {
+                        return isAngleInArc(existingNote.angle, checkAngle, duration);
+                    }
                 } else {
-                    setSustainedNoteStartPoint(null);
+                    if (existingNote.durationAngle && existingNote.durationAngle > 0) {
+                        return isAngleInArc(checkAngle, existingNote.angle, existingNote.durationAngle);
+                    } else {
+                        const snapAngle = TRACK_SNAP_ANGLES[checkTrack];
+                        return Math.abs(existingNote.angle - checkAngle) < snapAngle / 2;
+                    }
                 }
-                return;
-            }
+            });
+        };
 
-            const angle1 = sustainedNoteStartPoint.angle;
-            const angle2 = snappedAngle;
+        const snapAngleForTrack = TRACK_SNAP_ANGLES[startTrack];
+        const snappedEndAngle = (Math.round(currentAngle / snapAngleForTrack) * snapAngleForTrack) % 360;
+        const durationAngle = (snappedEndAngle - startAngle + 360) % 360;
 
-            if (angle1 === angle2) { // Clicked same spot twice, cancel
-                setSustainedNoteStartPoint(null);
-                return;
-            }
-
-            // Calculate shortest path for the arc
-            let startAngle, durationAngle;
-            const clockwiseDist = (angle2 - angle1 + 360) % 360;
-            
-            if (clockwiseDist <= 180) {
-                startAngle = angle1;
-                durationAngle = clockwiseDist;
-            } else {
-                startAngle = angle2;
-                durationAngle = 360 - clockwiseDist;
-            }
-
-            if (durationAngle < snapAngleForTrack / 2) {
-                setSustainedNoteStartPoint(null);
-                return; // Duration too small, cancel.
-            }
-
-            if (!isSlotOccupied(track, startAngle, durationAngle)) {
+        if (durationAngle < snapAngleForTrack / 2) {
+            const newNote: Note = {
+                id: `note-${Date.now()}-${Math.random()}`,
+                track: startTrack,
+                angle: startAngle,
+                color: activeColor.color,
+                name: activeColor.name,
+            };
+            setNotes(prev => [...prev, newNote]);
+        } else {
+            if (!isSlotOccupied(startTrack, startAngle, durationAngle)) {
                 const newNote: Note = {
                     id: `note-${Date.now()}-${Math.random()}`,
-                    track: track,
+                    track: startTrack,
                     angle: startAngle,
                     durationAngle: durationAngle,
                     color: activeColor.color,
@@ -322,23 +309,15 @@ const App: React.FC = () => {
                 };
                 setNotes(prev => [...prev, newNote]);
             }
-            setSustainedNoteStartPoint(null); // Reset after creation attempt
         }
-    } else {
-        // Single note mode
-        if (!isSlotOccupied(track, snappedAngle)) {
-            const newNote: Note = {
-                id: `note-${Date.now()}-${Math.random()}`,
-                track: track,
-                angle: snappedAngle,
-                color: activeColor.color,
-                name: activeColor.name,
-            };
-            setNotes(prev => [...prev, newNote]);
+        setDragState(null);
+    }, [dragState, activeColor, notes]);
+
+    const handleMouseLeave = useCallback(() => {
+        if (dragState) {
+            setDragState(null);
         }
-    }
-  }, [isPlaying, notes, isSustainedMode, sustainedNoteStartPoint, activeColor, resumeAudio]);
-  
+    }, [dragState]);
 
   return (
     <div className="bg-gray-900 text-white min-h-screen flex flex-col items-center justify-center p-4 font-sans select-none overflow-hidden">
@@ -354,9 +333,12 @@ const App: React.FC = () => {
               isPlaying={isPlaying}
               activeTracks={activeTracks}
               onToggleTrack={handleToggleTrack}
-              onDiscClick={handleDiscClick}
+              onMouseDown={handleMouseDown}
+              onMouseMove={handleMouseMove}
+              onMouseUp={handleMouseUp}
+              onMouseLeave={handleMouseLeave}
+              dragState={dragState}
               activeColor={activeColor}
-              sustainedNoteStartPoint={sustainedNoteStartPoint}
             />
         </div>
       </div>
@@ -375,8 +357,6 @@ const App: React.FC = () => {
             recordedUrl={recordedUrl}
             isEffectsPanelOpen={isEffectsPanelOpen}
             onToggleEffectsPanel={handleToggleEffectsPanel}
-            isSustainedMode={isSustainedMode}
-            onSustainedModeToggle={handleSustainedModeToggle}
         />
         <div className={`w-full transition-all duration-500 ease-in-out ${isEffectsPanelOpen ? 'opacity-100 max-h-[500px] visible' : 'opacity-0 max-h-0 invisible'}`}>
           {isEffectsPanelOpen && <EffectsControls effects={effects} onChange={handleEffectChange} />}

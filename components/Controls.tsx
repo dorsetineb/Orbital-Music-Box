@@ -1,7 +1,7 @@
 import React from 'react';
 import type { NoteColor } from '../types';
 import { NOTE_COLORS } from '../constants';
-import { PlayIcon, PauseIcon, RecordIcon, ClearIcon, DownloadIcon, EffectsIcon, SustainedNoteIcon } from './icons';
+import { PlayIcon, PauseIcon, RecordIcon, ClearIcon, DownloadIcon, EffectsIcon } from './icons';
 
 interface ControlsProps {
   isPlaying: boolean;
@@ -10,14 +10,12 @@ interface ControlsProps {
   activeColor: NoteColor;
   recordedUrl: string | null;
   isEffectsPanelOpen: boolean;
-  isSustainedMode: boolean;
   onPlayPause: () => void;
   onRecord: () => void;
   onSpeedChange: (speed: number) => void;
   onColorSelect: (color: NoteColor) => void;
   onClear: () => void;
   onToggleEffectsPanel: () => void;
-  onSustainedModeToggle: () => void;
 }
 
 const Controls: React.FC<ControlsProps> = (props) => {
@@ -28,14 +26,12 @@ const Controls: React.FC<ControlsProps> = (props) => {
     activeColor,
     recordedUrl,
     isEffectsPanelOpen,
-    isSustainedMode,
     onPlayPause,
     onRecord,
     onSpeedChange,
     onColorSelect,
     onClear,
     onToggleEffectsPanel,
-    onSustainedModeToggle
   } = props;
 
   return (
@@ -54,7 +50,7 @@ const Controls: React.FC<ControlsProps> = (props) => {
             >
                 <RecordIcon isRecording={isRecording} />
             </button>
-             <button onClick={onClear} className="p-3 bg-gray-700 rounded-full hover:bg-yellow-500 transition-colors" disabled={isRecording || isSustainedMode} aria-label="Clear all notes">
+             <button onClick={onClear} className="p-3 bg-gray-700 rounded-full hover:bg-yellow-500 transition-colors" disabled={isRecording} aria-label="Clear all notes">
                 <ClearIcon />
             </button>
             <button onClick={onToggleEffectsPanel} className={`p-3 rounded-full transition-colors ${isEffectsPanelOpen ? 'bg-cyan-500' : 'bg-gray-700 hover:bg-cyan-600'}`} aria-label="Toggle effects panel">
@@ -88,9 +84,9 @@ const Controls: React.FC<ControlsProps> = (props) => {
                 ))}
             </div>
 
-            {/* Row 3: Speed Control & Sustained Note Toggle */}
-            <div className="flex items-center gap-4 w-full pt-2">
-                <div className="flex-grow flex items-center gap-3">
+            {/* Row 3: Speed Control */}
+            <div className="w-full pt-2">
+                 <div className="flex items-center gap-3">
                     <span className="text-gray-400 text-sm">Speed</span>
                     <input
                         id="speed-control"
@@ -104,9 +100,6 @@ const Controls: React.FC<ControlsProps> = (props) => {
                         aria-label="Rotation speed"
                     />
                 </div>
-                <button onClick={onSustainedModeToggle} className={`p-3 rounded-full transition-colors ${isSustainedMode ? 'bg-cyan-500' : 'bg-gray-700 hover:bg-cyan-600'}`} aria-label="Toggle sustained note mode" disabled={isPlaying || isRecording}>
-                    <SustainedNoteIcon />
-                </button>
             </div>
         </div>
 

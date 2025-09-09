@@ -2,15 +2,24 @@ import React from 'react';
 import type { Note, NoteColor } from '../types';
 import { DISC_SIZE, TRACK_COUNT, TRACK_WIDTH, INNER_RADIUS, TRACK_GAP, TRACK_RADII, TRACK_SNAP_ANGLES } from '../constants';
 
+interface DragState {
+  startTrack: number;
+  startAngle: number;
+  currentAngle: number;
+}
+
 interface DiscProps {
   notes: Note[];
   rotation: number;
   isPlaying: boolean;
   activeTracks: boolean[];
   activeColor: NoteColor;
-  sustainedNoteStartPoint?: { track: number; angle: number } | null;
+  dragState: DragState | null;
   onToggleTrack: (trackIndex: number) => void;
-  onDiscClick: (track: number, angle: number) => void;
+  onMouseDown: (track: number, angle: number) => void;
+  onMouseMove: (track: number, angle: number) => void;
+  onMouseUp: () => void;
+  onMouseLeave: () => void;
 }
 
 
@@ -69,7 +78,21 @@ const describeArc = (x: number, y: number, radius: number, startAngle: number, e
 };
 
 
-const Disc: React.FC<DiscProps> = ({ notes, rotation, isPlaying, activeTracks, onToggleTrack, onDiscClick, sustainedNoteStartPoint, activeColor }) => {
+const Disc: React.FC<DiscProps> = (props) => {
+    const { 
+        notes, 
+        rotation, 
+        isPlaying, 
+        activeTracks, 
+        onToggleTrack, 
+        dragState,
+        activeColor,
+        onMouseDown,
+        onMouseMove,
+        onMouseUp,
+        onMouseLeave
+    } = props;
+    
   const getCoordsFromEvent = (e: React.MouseEvent<SVGSVGElement>): { track: number; angle: number } | null => {
     const svg = e.currentTarget;
     const pt = svg.createSVGPoint();
@@ -102,11 +125,19 @@ const Disc: React.FC<DiscProps> = ({ notes, rotation, isPlaying, activeTracks, o
     return null;
   };
 
-  const handleClick = (e: React.MouseEvent<SVGSVGElement>) => {
+  const handleMouseDown = (e: React.MouseEvent<SVGSVGElement>) => {
       if (isPlaying) return;
       const coords = getCoordsFromEvent(e);
       if (coords) {
-          onDiscClick(coords.track, coords.angle);
+          onMouseDown(coords.track, coords.angle);
+      }
+  };
+
+  const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
+      if (isPlaying || !dragState) return;
+      const coords = getCoordsFromEvent(e);
+      if(coords) {
+          onMouseMove(coords.track, coords.angle);
       }
   };
   
@@ -122,7 +153,10 @@ const Disc: React.FC<DiscProps> = ({ notes, rotation, isPlaying, activeTracks, o
     <div className="w-full h-full">
       <svg
         viewBox={`-10 -10 ${DISC_SIZE + 20} ${DISC_SIZE + 20}`}
-        onClick={handleClick}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={onMouseUp}
+        onMouseLeave={onMouseLeave}
         className={isPlaying ? 'cursor-default' : 'cursor-pointer'}
         style={{ width: '100%', height: '100%' }}
       >
@@ -203,22 +237,25 @@ const Disc: React.FC<DiscProps> = ({ notes, rotation, isPlaying, activeTracks, o
               );
             }
           })}
-          {/* Sustained Note Start Point Marker */}
-          {sustainedNoteStartPoint && (
+          {/* Drag Preview */}
+          {dragState && (
               (() => {
-                  const trackRadius = TRACK_RADII[sustainedNoteStartPoint.track];
-                  const x = DISC_SIZE / 2 + trackRadius * Math.cos(sustainedNoteStartPoint.angle * Math.PI / 180);
-                  const y = DISC_SIZE / 2 + trackRadius * Math.sin(sustainedNoteStartPoint.angle * Math.PI / 180);
+                  const trackRadius = TRACK_RADII[dragState.startTrack];
+                  const endAngle = dragState.startAngle + ((dragState.currentAngle - dragState.startAngle + 360) % 360);
+                  
+                  const duration = endAngle - dragState.startAngle;
+                  if(duration < 1) return null; // Don't show preview for a tiny click
+
+                  const pathData = describeArc(DISC_SIZE / 2, DISC_SIZE / 2, trackRadius, dragState.startAngle, endAngle);
                   return (
-                      <circle
-                          cx={x}
-                          cy={y}
-                          r={TRACK_WIDTH / 2}
+                      <path
+                          d={pathData}
                           fill="none"
                           stroke={activeColor.color}
-                          strokeWidth={3}
-                          strokeDasharray="5 5"
-                          className="pointer-events-none animate-pulse"
+                          strokeOpacity="0.5"
+                          strokeWidth={TRACK_WIDTH}
+                          strokeLinecap="round"
+                          className="pointer-events-none"
                       />
                   );
               })()
