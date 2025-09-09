@@ -1,12 +1,7 @@
 import React from 'react';
 import type { Note, NoteColor } from '../types';
 import { DISC_SIZE, TRACK_COUNT, TRACK_WIDTH, INNER_RADIUS, TRACK_GAP, TRACK_RADII, TRACK_SNAP_ANGLES } from '../constants';
-
-interface DragState {
-  startTrack: number;
-  startAngle: number;
-  currentAngle: number;
-}
+import type { DragState } from '../App';
 
 interface DiscProps {
   notes: Note[];
@@ -56,18 +51,16 @@ const polarToCartesian = (centerX: number, centerY: number, radius: number, angl
 };
 
 const describeArc = (x: number, y: number, radius: number, startAngle: number, endAngle: number): string => {
-    // Ensure endAngle is greater for calculation, handling full circles
-    if (endAngle <= startAngle) {
-        endAngle += 360;
-    }
-    if (endAngle >= startAngle + 360) {
+    // Handle full circles
+    const fullCircle = Math.abs(endAngle - startAngle) >= 360;
+    if (fullCircle) {
         endAngle = startAngle + 359.99;
     }
 
     const start = polarToCartesian(x, y, radius, startAngle);
     const end = polarToCartesian(x, y, radius, endAngle);
     
-    const largeArcFlag = endAngle - startAngle <= 180 ? '0' : '1';
+    const largeArcFlag = Math.abs(endAngle - startAngle) <= 180 ? '0' : '1';
     
     const d = [
         'M', start.x, start.y,
@@ -112,7 +105,7 @@ const Disc: React.FC<DiscProps> = (props) => {
       angle += 360;
     }
 
-    // FIX: Always adjust for the visual rotation to map screen coords to model coords.
+    // Adjust for the visual rotation to map screen coords to model coords.
     const adjustedAngle = (angle - rotation + 360) % 360;
     
     for (let i = 0; i < TRACK_COUNT; i++) {
@@ -240,13 +233,23 @@ const Disc: React.FC<DiscProps> = (props) => {
           {/* Drag Preview */}
           {dragState && (
               (() => {
-                  const trackRadius = TRACK_RADII[dragState.startTrack];
-                  const endAngle = dragState.startAngle + ((dragState.currentAngle - dragState.startAngle + 360) % 360);
-                  
-                  const duration = endAngle - dragState.startAngle;
-                  if(duration < 1) return null; // Don't show preview for a tiny click
+                  const { startTrack, startAngle, totalAngleDelta } = dragState;
+                  if (Math.abs(totalAngleDelta) < 1) return null; // Don't show preview for a tiny click
 
-                  const pathData = describeArc(DISC_SIZE / 2, DISC_SIZE / 2, trackRadius, dragState.startAngle, endAngle);
+                  const trackRadius = TRACK_RADII[startTrack];
+                  let arcStart, arcEnd;
+                  
+                  // Correctly determine start and end for drawing based on drag direction
+                  if (totalAngleDelta > 0) { // Clockwise
+                    arcStart = startAngle;
+                    arcEnd = startAngle + totalAngleDelta;
+                  } else { // Counter-clockwise
+                    arcStart = startAngle + totalAngleDelta;
+                    arcEnd = startAngle;
+                  }
+
+                  const pathData = describeArc(DISC_SIZE / 2, DISC_SIZE / 2, trackRadius, arcStart, arcEnd);
+                  
                   return (
                       <path
                           d={pathData}

@@ -49,10 +49,11 @@ const findNoteAt = (notes: Note[], track: number, angle: number): Note | null =>
     return null;
 };
 
-interface DragState {
+export interface DragState {
   startTrack: number;
   startAngle: number;
-  currentAngle: number;
+  lastAngle: number;
+  totalAngleDelta: number;
 }
 
 const App: React.FC = () => {
@@ -186,11 +187,8 @@ const App: React.FC = () => {
         } else {
             // --- Single Note Audio Logic (Rewritten for accuracy) ---
             const prevNoteVisualAngle = (note.angle + prevRotation) % 360;
-            
             const rotationIncrement = (newRotation - prevRotation + 360) % 360;
-            
             const angleToPlayhead = (playheadPosition - prevNoteVisualAngle + 360) % 360;
-
             const crossed = angleToPlayhead > 0 && angleToPlayhead <= rotationIncrement;
 
             if (crossed) {
@@ -245,65 +243,96 @@ const App: React.FC = () => {
         setDragState({
             startTrack: track,
             startAngle: snappedAngle,
-            currentAngle: snappedAngle,
+            lastAngle: snappedAngle,
+            totalAngleDelta: 0,
         });
     }, [isPlaying, notes, resumeAudio]);
 
     const handleMouseMove = useCallback((track: number, angle: number) => {
-        if (!dragState) return;
-        if (track !== dragState.startTrack) {
-            setDragState(null);
-            return;
-        }
-        setDragState(prev => prev ? { ...prev, currentAngle: angle } : null);
+        if (!dragState || track !== dragState.startTrack) return;
+       
+        let delta = angle - dragState.lastAngle;
+        // Handle angle wrapping around 360/0
+        if (delta > 180) delta -= 360;
+        if (delta < -180) delta += 360;
+
+        setDragState(prev => prev ? { 
+            ...prev,
+            lastAngle: angle,
+            totalAngleDelta: prev.totalAngleDelta + delta,
+        } : null);
     }, [dragState]);
 
     const handleMouseUp = useCallback(() => {
         if (!dragState) return;
 
-        const { startTrack, startAngle, currentAngle } = dragState;
+        const { startTrack, startAngle, totalAngleDelta } = dragState;
+        const snapAngleForTrack = TRACK_SNAP_ANGLES[startTrack];
 
         const isSlotOccupied = (checkTrack: number, checkAngle: number, duration: number = 0): boolean => {
-            return notes.some(existingNote => {
+             return notes.some(existingNote => {
                 if (existingNote.track !== checkTrack) return false;
-
                 if (duration > 0) {
                     if (existingNote.durationAngle && existingNote.durationAngle > 0) {
                         return doArcsOverlap(checkAngle, duration, existingNote.angle, existingNote.durationAngle);
-                    } else {
-                        return isAngleInArc(existingNote.angle, checkAngle, duration);
                     }
+                    return isAngleInArc(existingNote.angle, checkAngle, duration);
                 } else {
                     if (existingNote.durationAngle && existingNote.durationAngle > 0) {
                         return isAngleInArc(checkAngle, existingNote.angle, existingNote.durationAngle);
-                    } else {
-                        const snapAngle = TRACK_SNAP_ANGLES[checkTrack];
-                        return Math.abs(existingNote.angle - checkAngle) < snapAngle / 2;
                     }
+                    return Math.abs(existingNote.angle - checkAngle) < snapAngleForTrack / 2;
                 }
             });
         };
 
-        const snapAngleForTrack = TRACK_SNAP_ANGLES[startTrack];
-        const snappedEndAngle = (Math.round(currentAngle / snapAngleForTrack) * snapAngleForTrack) % 360;
-        const durationAngle = (snappedEndAngle - startAngle + 360) % 360;
-
-        if (durationAngle < snapAngleForTrack / 2) {
-            const newNote: Note = {
-                id: `note-${Date.now()}-${Math.random()}`,
-                track: startTrack,
-                angle: startAngle,
-                color: activeColor.color,
-                name: activeColor.name,
-            };
-            setNotes(prev => [...prev, newNote]);
-        } else {
-            if (!isSlotOccupied(startTrack, startAngle, durationAngle)) {
+        // If drag was negligible, treat as a click to create a single note.
+        if (Math.abs(totalAngleDelta) < snapAngleForTrack / 2) {
+             if (!isSlotOccupied(startTrack, startAngle)) {
                 const newNote: Note = {
                     id: `note-${Date.now()}-${Math.random()}`,
                     track: startTrack,
                     angle: startAngle,
-                    durationAngle: durationAngle,
+                    color: activeColor.color,
+                    name: activeColor.name,
+                };
+                setNotes(prev => [...prev, newNote]);
+            }
+        } else {
+            // Sustained note logic
+            let finalAngle: number;
+            let finalDuration: number;
+            
+            const snappedTotalAngle = Math.round(totalAngleDelta / snapAngleForTrack) * snapAngleForTrack;
+
+            if (snappedTotalAngle >= 0) { // Clockwise drag
+                finalAngle = startAngle;
+                finalDuration = snappedTotalAngle;
+            } else { // Counter-clockwise drag
+                const endAngle = (startAngle + snappedTotalAngle + 360) % 360;
+                finalAngle = endAngle;
+                finalDuration = -snappedTotalAngle;
+            }
+
+            // After snapping, duration might be too small
+            if (finalDuration < snapAngleForTrack / 2) {
+                 if (!isSlotOccupied(startTrack, startAngle)) {
+                    const newNote: Note = {
+                        id: `note-${Date.now()}-${Math.random()}`,
+                        track: startTrack,
+                        angle: startAngle,
+                        color: activeColor.color,
+                        name: activeColor.name,
+                    };
+                    setNotes(prev => [...prev, newNote]);
+                }
+            } else if (!isSlotOccupied(startTrack, finalAngle, finalDuration)) {
+                 if (finalDuration >= 360) finalDuration = 359.9;
+                const newNote: Note = {
+                    id: `note-${Date.now()}-${Math.random()}`,
+                    track: startTrack,
+                    angle: finalAngle,
+                    durationAngle: finalDuration,
                     color: activeColor.color,
                     name: activeColor.name,
                 };
@@ -314,10 +343,11 @@ const App: React.FC = () => {
     }, [dragState, activeColor, notes]);
 
     const handleMouseLeave = useCallback(() => {
-        if (dragState) {
-            setDragState(null);
-        }
-    }, [dragState]);
+       // We call handleMouseUp to finalize any note being dragged if the mouse leaves the area
+       if(dragState) {
+           handleMouseUp();
+       }
+    }, [dragState, handleMouseUp]);
 
   return (
     <div className="bg-gray-900 text-white min-h-screen flex flex-col items-center justify-center p-4 font-sans select-none overflow-hidden">
