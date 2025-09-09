@@ -89,8 +89,8 @@ const Disc: React.FC<DiscProps> = ({ notes, rotation, isPlaying, activeTracks, o
       angle += 360;
     }
 
-    const currentDiscRotation = isPlaying ? rotation : 0;
-    const adjustedAngle = (angle - currentDiscRotation + 360) % 360;
+    // FIX: Always adjust for the visual rotation to map screen coords to model coords.
+    const adjustedAngle = (angle - rotation + 360) % 360;
     
     for (let i = 0; i < TRACK_COUNT; i++) {
         const trackStartRadius = INNER_RADIUS + i * (TRACK_WIDTH + TRACK_GAP);

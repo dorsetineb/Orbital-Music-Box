@@ -187,21 +187,22 @@ const App: React.FC = () => {
                 playingSustainedNotesRef.current.delete(note.id);
             }
         } else {
-             // Single Note: Trigger on crossing
+            // --- Single Note Audio Logic (Rewritten for accuracy) ---
             const prevNoteVisualAngle = (note.angle + prevRotation) % 360;
-            const currentNoteVisualAngle = (note.angle + newRotation) % 360;
             
-            let crossed = false;
-            if (prevNoteVisualAngle < currentNoteVisualAngle) {
-                if (prevNoteVisualAngle < playheadPosition && currentNoteVisualAngle >= playheadPosition) crossed = true;
-            } else if (prevNoteVisualAngle > currentNoteVisualAngle) { 
-                if (prevNoteVisualAngle < playheadPosition || currentNoteVisualAngle >= playheadPosition) crossed = true;
-            }
+            // Calculate how far the disc rotated in this frame
+            const rotationIncrement = (newRotation - prevRotation + 360) % 360;
+            
+            // Calculate the note's angle relative to the playhead at the start of the frame
+            const angleToPlayhead = (playheadPosition - prevNoteVisualAngle + 360) % 360;
+
+            // If the note was before the playhead and the rotation increment crossed it, trigger play
+            const crossed = angleToPlayhead > 0 && angleToPlayhead <= rotationIncrement;
 
             if (crossed) {
                 const now = Date.now();
                 const lastPlayed = lastPlayedRef.current.get(note.id) || 0;
-                if (now - lastPlayed > 250) {
+                if (now - lastPlayed > 250) { // Debounce
                     playNote(freq);
                     lastPlayedRef.current.set(note.id, now);
                 }
