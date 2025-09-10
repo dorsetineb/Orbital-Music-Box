@@ -46,7 +46,8 @@ const useAudioEngine = () => {
   const audioChunksRef = useRef<Blob[]>([]);
   const destinationNodeRef = useRef<MediaStreamAudioDestinationNode | null>(null);
   const prevEffectsRef = useRef<AudioEffects | null>(null);
-  const activeSourcesRef = useRef(new Map<string, { oscillator: OscillatorNode, gainNode: GainNode }>());
+  // UPDATED: Store multiple oscillators and the sub-oscillator gain node per note
+  const activeSourcesRef = useRef(new Map<string, { oscillators: OscillatorNode[], gainNode: GainNode, subGainNode: GainNode | null }>());
 
 
   // Effect nodes
@@ -238,6 +239,15 @@ const useAudioEngine = () => {
       effects.phaserWet?.gain.linearRampToValueAtTime(newEffects.phaserMix, targetTime);
       effects.flangerWet?.gain.linearRampToValueAtTime(newEffects.flangerMix, targetTime);
 
+      // Update sub-octave mix for currently playing notes
+      if (prevEffects?.subOctaveMix !== newEffects.subOctaveMix) {
+          for (const source of activeSourcesRef.current.values()) {
+              if (source.subGainNode) {
+                  source.subGainNode.gain.linearRampToValueAtTime(newEffects.subOctaveMix, targetTime);
+              }
+          }
+      }
+
       // Update LFOs for phaser and flanger
       effects.phaserLFO?.frequency.linearRampToValueAtTime(newEffects.phaserRate, targetTime);
       effects.phaserLFOGain?.gain.linearRampToValueAtTime(newEffects.phaserDepth, targetTime);
@@ -259,21 +269,47 @@ const useAudioEngine = () => {
     if (!audioCtx || audioCtx.state !== 'running' || !effectsInput || activeSourcesRef.current.has(noteId)) {
         return;
     }
-
-    const oscillator = audioCtx.createOscillator();
-    const gainNode = audioCtx.createGain();
-
-    oscillator.type = 'sine';
-    oscillator.frequency.setValueAtTime(frequency, audioCtx.currentTime);
     
-    // Quick fade-in to prevent clicks, targeting a slightly lower volume for sustained notes.
+    // This GainNode controls the overall volume envelope for the note
+    const gainNode = audioCtx.createGain();
+    gainNode.connect(effectsInput);
+    // Quick fade-in to prevent clicks. Volume is slightly lower to prevent clipping.
     gainNode.gain.setValueAtTime(0, audioCtx.currentTime);
-    gainNode.gain.linearRampToValueAtTime(0.6, audioCtx.currentTime + 0.02); // 20ms fade-in
+    gainNode.gain.linearRampToValueAtTime(0.4, audioCtx.currentTime + 0.02);
 
-    oscillator.connect(gainNode).connect(effectsInput);
-    oscillator.start(audioCtx.currentTime);
+    // --- Create a richer sound with multiple oscillators ---
+    // Oscillator 1: Main tone (Triangle wave - softer than sine)
+    const osc1 = audioCtx.createOscillator();
+    osc1.type = 'triangle';
+    osc1.frequency.setValueAtTime(frequency, audioCtx.currentTime);
+    osc1.connect(gainNode);
 
-    activeSourcesRef.current.set(noteId, { oscillator, gainNode });
+    // Oscillator 2: Overtone (Sawtooth wave - adds brightness)
+    const osc2 = audioCtx.createOscillator();
+    osc2.type = 'sawtooth';
+    osc2.frequency.setValueAtTime(frequency * 2, audioCtx.currentTime); // One octave higher
+
+    // The overtone should be quieter than the main tone
+    const osc2Gain = audioCtx.createGain();
+    osc2Gain.gain.value = 0.15; 
+    osc2.connect(osc2Gain).connect(gainNode);
+
+    // Oscillator 3: Sub-octave (Sine wave - for clean bass)
+    const osc3 = audioCtx.createOscillator();
+    osc3.type = 'sine';
+    osc3.frequency.setValueAtTime(frequency / 2, audioCtx.currentTime); // One octave lower
+    const subGainNode = audioCtx.createGain();
+    const currentSubMix = prevEffectsRef.current?.subOctaveMix ?? 0;
+    subGainNode.gain.value = currentSubMix;
+    osc3.connect(subGainNode).connect(gainNode);
+
+    // Start all oscillators
+    osc1.start(audioCtx.currentTime);
+    osc2.start(audioCtx.currentTime);
+    osc3.start(audioCtx.currentTime);
+
+    // Store references to stop them later
+    activeSourcesRef.current.set(noteId, { oscillators: [osc1, osc2, osc3], gainNode, subGainNode });
   }, []);
 
   const stopSustainedNote = useCallback((noteId: string) => {
@@ -281,14 +317,16 @@ const useAudioEngine = () => {
       const source = activeSourcesRef.current.get(noteId);
 
       if (audioCtx && source) {
-          const { oscillator, gainNode } = source;
-          const stopTime = audioCtx.currentTime + 0.05; // 50ms fade-out for precision
+          // Destructure the new structure with multiple oscillators
+          const { oscillators, gainNode } = source;
+          const stopTime = audioCtx.currentTime + 0.05; // 50ms fade-out
           
-          // Hold current gain value, then ramp down smoothly to prevent clicks.
+          // Ramp down the main gain node to fade out all connected oscillators smoothly
           gainNode.gain.setValueAtTime(gainNode.gain.value, audioCtx.currentTime); 
           gainNode.gain.linearRampToValueAtTime(0.0001, stopTime); 
           
-          oscillator.stop(stopTime);
+          // Schedule all oscillators to stop after the fade-out
+          oscillators.forEach(osc => osc.stop(stopTime));
           activeSourcesRef.current.delete(noteId);
       }
   }, []);

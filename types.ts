@@ -29,4 +29,5 @@ export interface AudioEffects {
   flangerMix: number; // 0 to 1
   flangerRate: number; // LFO frequency in Hz
   flangerDepth: number; // LFO gain (delay time modulation)
+  subOctaveMix: number; // 0 to 1
 }

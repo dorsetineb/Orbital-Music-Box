@@ -52,6 +52,7 @@ const App: React.FC = () => {
     flangerMix: 0,
     flangerRate: 0.2,
     flangerDepth: 0.005,
+    subOctaveMix: 0,
   });
 
   const { 

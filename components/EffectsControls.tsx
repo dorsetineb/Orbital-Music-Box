@@ -76,6 +76,17 @@ const EffectsControls: React.FC<EffectsControlsProps> = ({ effects, onChange }) 
                     />
                 </div>
                 
+                {/* Sub-Octave Slider */}
+                <div className="flex items-center gap-3 md:col-span-2">
+                    <label htmlFor="subOctaveMix" className="text-gray-400 text-sm w-24">Sub Octave</label>
+                    <input
+                        id="subOctaveMix"
+                        type="range" min="0" max="1" step="0.01" value={effects.subOctaveMix}
+                        onChange={(e) => onChange('subOctaveMix', Number(e.target.value))}
+                        className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb-white"
+                    />
+                </div>
+
                 {/* --- Spacer & Title for Modulation Effects --- */}
                 <hr className="md:col-span-2 border-gray-700 my-2" />
 
