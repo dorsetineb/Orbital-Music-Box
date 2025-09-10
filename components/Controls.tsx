@@ -1,7 +1,7 @@
 import React from 'react';
 import type { NoteColor } from '../types';
 import { NOTE_COLORS } from '../constants';
-import { PlayIcon, PauseIcon, RecordIcon, ClearIcon, DownloadIcon, EffectsIcon, SustainIcon, AIIcon, SpinnerIcon } from './icons';
+import { PlayIcon, PauseIcon, RecordIcon, ClearIcon, DownloadIcon, EffectsIcon, SustainIcon } from './icons';
 
 interface ControlsProps {
   isPlaying: boolean;
@@ -11,7 +11,6 @@ interface ControlsProps {
   recordedUrl: string | null;
   isEffectsPanelOpen: boolean;
   isSustainMode: boolean;
-  isGeneratingAI: boolean;
   onPlayPause: () => void;
   onRecord: () => void;
   onSpeedChange: (speed: number) => void;
@@ -19,7 +18,6 @@ interface ControlsProps {
   onClear: () => void;
   onToggleEffectsPanel: () => void;
   onToggleSustainMode: () => void;
-  onGenerateAI: () => void;
 }
 
 const Controls: React.FC<ControlsProps> = (props) => {
@@ -31,7 +29,6 @@ const Controls: React.FC<ControlsProps> = (props) => {
     recordedUrl,
     isEffectsPanelOpen,
     isSustainMode,
-    isGeneratingAI,
     onPlayPause,
     onRecord,
     onSpeedChange,
@@ -39,7 +36,6 @@ const Controls: React.FC<ControlsProps> = (props) => {
     onClear,
     onToggleEffectsPanel,
     onToggleSustainMode,
-    onGenerateAI,
   } = props;
 
   return (
@@ -48,13 +44,12 @@ const Controls: React.FC<ControlsProps> = (props) => {
 
         {/* Row 1: Main Controls */}
         <div className="flex items-center gap-4">
-            <button onClick={onPlayPause} className="p-3 bg-gray-700 rounded-full hover:bg-cyan-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" disabled={isRecording || isGeneratingAI} aria-label={isPlaying ? 'Pause' : 'Play'}>
+            <button onClick={onPlayPause} className="p-3 bg-gray-700 rounded-full hover:bg-cyan-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" disabled={isRecording} aria-label={isPlaying ? 'Pause' : 'Play'}>
                 {isPlaying ? <PauseIcon /> : <PlayIcon />}
             </button>
             <button 
                 onClick={onRecord} 
-                className={`p-3 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${isRecording ? 'bg-red-500 animate-pulse' : 'bg-gray-700 hover:bg-red-500'}`}
-                 disabled={isGeneratingAI}
+                className={`p-3 rounded-full transition-colors ${isRecording ? 'bg-red-500 animate-pulse' : 'bg-gray-700 hover:bg-red-500'}`}
                  aria-label={isRecording ? 'Stop Recording' : 'Start Recording'}
             >
                 <RecordIcon isRecording={isRecording} />
@@ -62,15 +57,12 @@ const Controls: React.FC<ControlsProps> = (props) => {
             <button
                 onClick={onToggleSustainMode}
                 className={`p-3 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${isSustainMode ? 'bg-cyan-500' : 'bg-gray-700 hover:bg-cyan-600'}`}
-                disabled={isRecording || isGeneratingAI}
+                disabled={isRecording}
                 aria-label="Toggle sustain mode"
             >
                 <SustainIcon />
             </button>
-             <button onClick={onGenerateAI} className="p-3 bg-gray-700 rounded-full hover:bg-purple-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" disabled={isRecording || isGeneratingAI} aria-label="Generate with AI">
-                {isGeneratingAI ? <SpinnerIcon /> : <AIIcon />}
-            </button>
-             <button onClick={onClear} className="p-3 bg-gray-700 rounded-full hover:bg-yellow-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" disabled={isRecording || isGeneratingAI} aria-label="Clear all notes">
+             <button onClick={onClear} className="p-3 bg-gray-700 rounded-full hover:bg-yellow-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" disabled={isRecording} aria-label="Clear all notes">
                 <ClearIcon />
             </button>
             <button onClick={onToggleEffectsPanel} className={`p-3 rounded-full transition-colors ${isEffectsPanelOpen ? 'bg-cyan-500' : 'bg-gray-700 hover:bg-cyan-600'}`} aria-label="Toggle effects panel">
@@ -91,8 +83,7 @@ const Controls: React.FC<ControlsProps> = (props) => {
                 <button
                     key={note.name}
                     onClick={() => onColorSelect(note)}
-                    disabled={isGeneratingAI}
-                    className={`w-10 h-10 rounded-full transition-transform duration-200 flex justify-center items-center font-bold text-white disabled:opacity-50 disabled:cursor-not-allowed ${activeColor.name === note.name ? 'ring-2 ring-offset-2 ring-offset-gray-800' : ''}`}
+                    className={`w-10 h-10 rounded-full transition-transform duration-200 flex justify-center items-center font-bold text-white ${activeColor.name === note.name ? 'ring-2 ring-offset-2 ring-offset-gray-800' : ''}`}
                     style={{ 
                         backgroundColor: note.color, 
                         '--tw-ring-color': note.color,
@@ -117,8 +108,7 @@ const Controls: React.FC<ControlsProps> = (props) => {
                         step="0.5"
                         value={rotationSpeed}
                         onChange={(e) => onSpeedChange(Number(e.target.value))}
-                        className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb-white disabled:opacity-50"
-                        disabled={isGeneratingAI}
+                        className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb-white"
                         aria-label="Rotation speed"
                     />
                 </div>

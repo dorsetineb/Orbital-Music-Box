@@ -4,8 +4,7 @@ import Controls from './components/Controls';
 import EffectsControls from './components/EffectsControls';
 import useAudioEngine from './hooks/useAudioEngine';
 import type { Note, NoteColor, AudioEffects } from './types';
-import { NOTE_COLORS, TRACK_COUNT, TRACK_SNAP_ANGLES } from './constants';
-import { generateComposition, AINote } from './ai/gemini';
+import { NOTE_COLORS, TRACK_SNAP_ANGLES } from './constants';
 
 // --- Collision Detection Helpers ---
 const isAngleInArc = (angle: number, arcStart: number, arcDuration: number): boolean => {
@@ -40,7 +39,6 @@ const App: React.FC = () => {
   const [activeTracks, setActiveTracks] = useState<boolean[]>([true, true, true, true]);
   const [isEffectsPanelOpen, setIsEffectsPanelOpen] = useState<boolean>(false);
   const [isSustainMode, setIsSustainMode] = useState<boolean>(false);
-  const [isGeneratingAI, setIsGeneratingAI] = useState<boolean>(false);
   
   const [effects, setEffects] = useState<AudioEffects>({
     reverbMix: 0,
@@ -122,44 +120,6 @@ const App: React.FC = () => {
   const handleToggleSustainMode = () => {
       setIsSustainMode(prev => !prev);
   }
-
-  const handleGenerateAI = useCallback(async () => {
-    if (isGeneratingAI || isRecording) return;
-    setIsGeneratingAI(true);
-    try {
-        const aiNotes: AINote[] = await generateComposition();
-        
-        const newNotes: Note[] = aiNotes.map(aiNote => {
-            // Validate track and color index to prevent crashes
-            if (aiNote.track < 0 || aiNote.track >= TRACK_COUNT || aiNote.colorIndex < 0 || aiNote.colorIndex >= NOTE_COLORS.length) {
-                return null;
-            }
-
-            const snapAngleForTrack = TRACK_SNAP_ANGLES[aiNote.track];
-            // Snap the AI-generated angle to the nearest valid slot on its track
-            const snappedAngle = (Math.round(aiNote.angle / snapAngleForTrack) * snapAngleForTrack) % 360;
-            
-            const colorInfo = NOTE_COLORS[aiNote.colorIndex];
-
-            return {
-                id: `note-${Date.now()}-${Math.random()}`,
-                track: aiNote.track,
-                angle: snappedAngle,
-                color: colorInfo.color,
-                name: colorInfo.name,
-                durationAngle: snapAngleForTrack,
-            };
-        }).filter((note): note is Note => note !== null); // Filter out any nulls from validation failure
-
-        setNotes(newNotes);
-
-    } catch (error) {
-        console.error("AI Generation failed:", error);
-        alert(error instanceof Error ? error.message : "An unknown error occurred during AI generation.");
-    } finally {
-        setIsGeneratingAI(false);
-    }
-  }, [isGeneratingAI, isRecording]);
 
   const animate = useCallback(() => {
     setRotation(prevRotation => {
@@ -334,8 +294,6 @@ const App: React.FC = () => {
             onToggleEffectsPanel={handleToggleEffectsPanel}
             isSustainMode={isSustainMode}
             onToggleSustainMode={handleToggleSustainMode}
-            isGeneratingAI={isGeneratingAI}
-            onGenerateAI={handleGenerateAI}
         />
         <div className={`w-full transition-all duration-500 ease-in-out ${isEffectsPanelOpen ? 'opacity-100 max-h-[500px] visible' : 'opacity-0 max-h-0 invisible'}`}>
           {isEffectsPanelOpen && <EffectsControls effects={effects} onChange={handleEffectChange} />}

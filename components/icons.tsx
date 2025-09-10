@@ -61,30 +61,9 @@ export const EffectsIcon: React.FC = () => (
     </svg>
 );
 
-{/* FIX: Added missing icons */}
 export const SustainIcon: React.FC = () => (
     <svg {...iconProps} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M4 18h16"></path>
         <path d="M8 18V8a4 4 0 0 1 4-4h0a4 4 0 0 1 4 4v10"></path>
     </svg>
-);
-
-export const AIIcon: React.FC = () => (
-    <svg {...iconProps} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M12 3v6M4.2 8.2l4.2 4.2M3 12h6M4.2 15.8l4.2-4.2M12 21v-6M19.8 15.8l-4.2-4.2M21 12h-6M19.8 8.2l-4.2 4.2"></path>
-    </svg>
-);
-
-export const SpinnerIcon: React.FC = () => (
-  <svg
-    {...iconProps}
-    className="w-6 h-6 text-white animate-spin"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-  >
-    <path d="M21 12a9 9 0 1 1-6.219-8.56" />
-  </svg>
 );
