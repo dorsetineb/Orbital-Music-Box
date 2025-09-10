@@ -1,4 +1,3 @@
-
 import React from 'react';
 
 const iconProps = {
@@ -62,8 +61,9 @@ export const EffectsIcon: React.FC = () => (
 );
 
 export const SustainIcon: React.FC = () => (
-    <svg {...iconProps} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M4 18h16"></path>
-        <path d="M8 18V8a4 4 0 0 1 4-4h0a4 4 0 0 1 4 4v10"></path>
+    <svg {...iconProps} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <line x1="10" y1="12" x2="14" y2="12" />
+        <circle cx="7" cy="12" r="3" />
+        <circle cx="17" cy="12" r="3" />
     </svg>
 );
