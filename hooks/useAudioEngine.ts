@@ -252,29 +252,6 @@ const useAudioEngine = () => {
       prevEffectsRef.current = newEffects;
   }, []);
 
-  const playNote = useCallback((frequency: number) => {
-    const audioCtx = audioCtxRef.current;
-    const effectsInput = effectsChainRef.current.input;
-
-    if (!audioCtx || audioCtx.state !== 'running' || !effectsInput) {
-        return;
-    }
-    
-    const oscillator = audioCtx.createOscillator();
-    const gainNode = audioCtx.createGain();
-
-    oscillator.type = 'sine';
-    oscillator.frequency.setValueAtTime(frequency, audioCtx.currentTime);
-    
-    gainNode.gain.setValueAtTime(0.8, audioCtx.currentTime);
-    gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.8);
-
-    oscillator.connect(gainNode).connect(effectsInput);
-
-    oscillator.start(audioCtx.currentTime);
-    oscillator.stop(audioCtx.currentTime + 0.8);
-  }, []);
-
   const startSustainedNote = useCallback((frequency: number, noteId: string) => {
     const audioCtx = audioCtxRef.current;
     const effectsInput = effectsChainRef.current.input;
@@ -289,8 +266,9 @@ const useAudioEngine = () => {
     oscillator.type = 'sine';
     oscillator.frequency.setValueAtTime(frequency, audioCtx.currentTime);
     
+    // Quick fade-in to prevent clicks, targeting a slightly lower volume for sustained notes.
     gainNode.gain.setValueAtTime(0, audioCtx.currentTime);
-    gainNode.gain.linearRampToValueAtTime(0.8, audioCtx.currentTime + 0.1); // Quick but smooth fade-in
+    gainNode.gain.linearRampToValueAtTime(0.6, audioCtx.currentTime + 0.02); // 20ms fade-in
 
     oscillator.connect(gainNode).connect(effectsInput);
     oscillator.start(audioCtx.currentTime);
@@ -304,10 +282,12 @@ const useAudioEngine = () => {
 
       if (audioCtx && source) {
           const { oscillator, gainNode } = source;
-          const stopTime = audioCtx.currentTime + 0.25; // Slower, smoother fade out
-          // Use linear ramp to 0 to prevent clicks. Exponential ramp can't target 0.
-          gainNode.gain.setValueAtTime(gainNode.gain.value, audioCtx.currentTime); // Hold current value before ramping
+          const stopTime = audioCtx.currentTime + 0.05; // 50ms fade-out for precision
+          
+          // Hold current gain value, then ramp down smoothly to prevent clicks.
+          gainNode.gain.setValueAtTime(gainNode.gain.value, audioCtx.currentTime); 
           gainNode.gain.linearRampToValueAtTime(0.0001, stopTime); 
+          
           oscillator.stop(stopTime);
           activeSourcesRef.current.delete(noteId);
       }
@@ -346,7 +326,7 @@ const useAudioEngine = () => {
     });
   }, []);
 
-  return { playNote, startSustainedNote, stopSustainedNote, startRecording, stopRecording, isRecording, resumeAudio, updateEffects };
+  return { startSustainedNote, stopSustainedNote, startRecording, stopRecording, isRecording, resumeAudio, updateEffects };
 };
 
 export default useAudioEngine;

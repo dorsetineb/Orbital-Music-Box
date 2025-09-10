@@ -1,20 +1,14 @@
 import React from 'react';
-import type { Note, NoteColor } from '../types';
+import type { Note } from '../types';
 import { DISC_SIZE, TRACK_COUNT, TRACK_WIDTH, INNER_RADIUS, TRACK_GAP, TRACK_RADII, TRACK_SNAP_ANGLES } from '../constants';
-import type { DragState } from '../App';
 
 interface DiscProps {
   notes: Note[];
   rotation: number;
   isPlaying: boolean;
   activeTracks: boolean[];
-  activeColor: NoteColor;
-  dragState: DragState | null;
   onToggleTrack: (trackIndex: number) => void;
-  onMouseDown: (track: number, angle: number) => void;
-  onMouseMove: (track: number, angle: number) => void;
-  onMouseUp: () => void;
-  onMouseLeave: () => void;
+  onDiscClick: (track: number, angle: number) => void;
 }
 
 
@@ -43,6 +37,7 @@ const lightenHexColor = (hex: string, percent: number): string => {
 
 // --- SVG Arc Helpers ---
 const polarToCartesian = (centerX: number, centerY: number, radius: number, angleInDegrees: number) => {
+    // 0 degrees is at the top (12 o'clock)
     const angleInRadians = ((angleInDegrees - 90) * Math.PI) / 180.0;
     return {
         x: centerX + radius * Math.cos(angleInRadians),
@@ -51,6 +46,10 @@ const polarToCartesian = (centerX: number, centerY: number, radius: number, angl
 };
 
 const describeArc = (x: number, y: number, radius: number, startAngle: number, endAngle: number): string => {
+    // Prevent rendering artifacts for very small arcs by ensuring a minimum length.
+    if (Math.abs(endAngle - startAngle) < 0.01) {
+        endAngle = startAngle + 0.01;
+    }
     // Handle full circles
     const fullCircle = Math.abs(endAngle - startAngle) >= 360;
     if (fullCircle) {
@@ -78,12 +77,7 @@ const Disc: React.FC<DiscProps> = (props) => {
         isPlaying, 
         activeTracks, 
         onToggleTrack, 
-        dragState,
-        activeColor,
-        onMouseDown,
-        onMouseMove,
-        onMouseUp,
-        onMouseLeave
+        onDiscClick
     } = props;
     
   const getCoordsFromEvent = (e: React.MouseEvent<SVGSVGElement>): { track: number; angle: number } | null => {
@@ -100,18 +94,22 @@ const Disc: React.FC<DiscProps> = (props) => {
     const dy = svgP.y - centerY;
     
     const distance = Math.sqrt(dx * dx + dy * dy);
-    let angle = (Math.atan2(dy, dx) * 180) / Math.PI;
+
+    // Calculate angle where 0 is at the top, increasing clockwise.
+    let angle = (Math.atan2(dy, dx) * 180) / Math.PI + 90;
     if (angle < 0) {
       angle += 360;
     }
 
-    // Adjust for the visual rotation to map screen coords to model coords.
+    // Adjust for disc rotation to get the logical angle of the note
     const adjustedAngle = (angle - rotation + 360) % 360;
     
     for (let i = 0; i < TRACK_COUNT; i++) {
+        // We check from the inside out to find the track
         const trackStartRadius = INNER_RADIUS + i * (TRACK_WIDTH + TRACK_GAP);
         const trackEndRadius = trackStartRadius + TRACK_WIDTH;
         if (distance >= trackStartRadius && distance <= trackEndRadius) {
+            // Return the logical track index (0 is outermost)
             return { track: TRACK_COUNT - 1 - i, angle: adjustedAngle };
         }
     }
@@ -122,34 +120,15 @@ const Disc: React.FC<DiscProps> = (props) => {
       if (isPlaying) return;
       const coords = getCoordsFromEvent(e);
       if (coords) {
-          onMouseDown(coords.track, coords.angle);
+          onDiscClick(coords.track, coords.angle);
       }
   };
-
-  const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
-      if (isPlaying || !dragState) return;
-      const coords = getCoordsFromEvent(e);
-      if(coords) {
-          onMouseMove(coords.track, coords.angle);
-      }
-  };
-  
-  // These variables define the playhead as if it were drawn horizontally to the right
-  const playheadVerticalMargin = 20; 
-  const playheadThickness = TRACK_WIDTH + 30; // The thickness of the rod
-  const playheadLength = (TRACK_COUNT * TRACK_WIDTH) + ((TRACK_COUNT - 1) * TRACK_GAP) + (playheadVerticalMargin * 2); // The length of the rod
-  const playheadX = (DISC_SIZE / 2) + INNER_RADIUS - playheadVerticalMargin;
-  const playheadY = (DISC_SIZE / 2) - (playheadThickness / 2);
-
 
   return (
     <div className="w-full h-full">
       <svg
         viewBox={`-10 -10 ${DISC_SIZE + 20} ${DISC_SIZE + 20}`}
         onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={onMouseUp}
-        onMouseLeave={onMouseLeave}
         className={isPlaying ? 'cursor-default' : 'cursor-pointer'}
         style={{ width: '100%', height: '100%' }}
       >
@@ -172,14 +151,14 @@ const Disc: React.FC<DiscProps> = (props) => {
               const numPoints = 360 / snapAngle;
               const radius = TRACK_RADII[trackIndex];
               return Array.from({ length: numPoints }).map((_, pointIndex) => {
-                  const angle = pointIndex * snapAngle;
-                  const x = DISC_SIZE / 2 + radius * Math.cos(angle * Math.PI / 180);
-                  const y = DISC_SIZE / 2 + radius * Math.sin(angle * Math.PI / 180);
+                  // Render the dot in the middle of the slot for correct visual alignment.
+                  const angle = pointIndex * snapAngle + snapAngle / 2;
+                  const pos = polarToCartesian(DISC_SIZE/2, DISC_SIZE/2, radius, angle);
                   return (
                       <circle
                           key={`snap-${trackIndex}-${pointIndex}`}
-                          cx={x}
-                          cy={y}
+                          cx={pos.x}
+                          cy={pos.y}
                           r="2"
                           fill="rgba(255, 255, 255, 0.1)"
                           className="pointer-events-none"
@@ -191,128 +170,113 @@ const Disc: React.FC<DiscProps> = (props) => {
           {/* Notes */}
           {notes.map(note => {
             const trackRadius = TRACK_RADII[note.track];
-            if (note.durationAngle && note.durationAngle > 0) {
-              const pathData = describeArc(DISC_SIZE / 2, DISC_SIZE / 2, trackRadius, note.angle, note.angle + note.durationAngle);
-              return (
-                 <g key={note.id} className="pointer-events-none">
-                    {/* Border */}
-                    <path
-                        d={pathData}
-                        fill="none"
-                        stroke={lightenHexColor(note.color, 40)}
-                        strokeWidth={TRACK_WIDTH + 6}
-                        strokeLinecap="round"
-                    />
-                    {/* Fill */}
-                    <path
-                        d={pathData}
-                        fill="none"
-                        stroke={note.color}
-                        strokeWidth={TRACK_WIDTH}
-                        strokeLinecap="round"
-                    />
-                </g>
-              );
+            // Use an epsilon to handle floating point inaccuracies.
+            const isSingleNote = note.durationAngle <= TRACK_SNAP_ANGLES[note.track] + 0.01;
+
+            if (isSingleNote) {
+                // --- RENDER CIRCLE for single notes ---
+                // Calculate the center of the slot for correct visual positioning.
+                const centerAngle = note.angle + note.durationAngle / 2;
+                const pos = polarToCartesian(DISC_SIZE / 2, DISC_SIZE / 2, trackRadius, centerAngle);
+                const noteRadius = TRACK_WIDTH / 2;
+                return (
+                    <g key={note.id} className="pointer-events-none">
+                        {/* Border */}
+                        <circle cx={pos.x} cy={pos.y} r={noteRadius + 3} fill={lightenHexColor(note.color, 40)} />
+                        {/* Fill */}
+                        <circle cx={pos.x} cy={pos.y} r={noteRadius} fill={note.color} />
+                    </g>
+                );
             } else {
-              const x = DISC_SIZE / 2 + trackRadius * Math.cos(note.angle * Math.PI / 180);
-              const y = DISC_SIZE / 2 + trackRadius * Math.sin(note.angle * Math.PI / 180);
-              return (
-                <circle
-                  key={note.id}
-                  cx={x}
-                  cy={y}
-                  r={TRACK_WIDTH / 2}
-                  fill={note.color}
-                  stroke={lightenHexColor(note.color, 40)}
-                  strokeWidth={3}
-                  className="pointer-events-none"
-                />
-              );
+                // --- RENDER ARC for sustained notes ---
+                let startAngle = note.angle;
+                let endAngle = note.angle + note.durationAngle;
+
+                // Compensate for the round line cap, which extends half the stroke width visually.
+                const capOffsetAngle = (Math.atan((TRACK_WIDTH / 2) / trackRadius) * 180 / Math.PI);
+                const compensatedStart = startAngle + capOffsetAngle;
+                const compensatedEnd = endAngle - capOffsetAngle;
+
+                // Only apply the compensation if the note is long enough, to prevent visual glitches.
+                if (compensatedEnd > compensatedStart) {
+                    startAngle = compensatedStart;
+                    endAngle = compensatedEnd;
+                }
+
+                const pathData = describeArc(DISC_SIZE / 2, DISC_SIZE / 2, trackRadius, startAngle, endAngle);
+                return (
+                    <g key={note.id} className="pointer-events-none">
+                        {/* Border */}
+                        <path
+                            d={pathData}
+                            fill="none"
+                            stroke={lightenHexColor(note.color, 40)}
+                            strokeWidth={TRACK_WIDTH + 6}
+                            strokeLinecap="round"
+                        />
+                        {/* Fill */}
+                        <path
+                            d={pathData}
+                            fill="none"
+                            stroke={note.color}
+                            strokeWidth={TRACK_WIDTH}
+                            strokeLinecap="round"
+                        />
+                    </g>
+                );
             }
           })}
-          {/* Drag Preview */}
-          {dragState && (
-              (() => {
-                  const { startTrack, startAngle, totalAngleDelta } = dragState;
-                  if (Math.abs(totalAngleDelta) < 1) return null; // Don't show preview for a tiny click
-
-                  const trackRadius = TRACK_RADII[startTrack];
-                  let arcStart, arcEnd;
-                  
-                  // Correctly determine start and end for drawing based on drag direction
-                  if (totalAngleDelta > 0) { // Clockwise
-                    arcStart = startAngle;
-                    arcEnd = startAngle + totalAngleDelta;
-                  } else { // Counter-clockwise
-                    arcStart = startAngle + totalAngleDelta;
-                    arcEnd = startAngle;
-                  }
-
-                  const pathData = describeArc(DISC_SIZE / 2, DISC_SIZE / 2, trackRadius, arcStart, arcEnd);
-                  
-                  return (
-                      <path
-                          d={pathData}
-                          fill="none"
-                          stroke={activeColor.color}
-                          strokeOpacity="0.5"
-                          strokeWidth={TRACK_WIDTH}
-                          strokeLinecap="round"
-                          className="pointer-events-none"
-                      />
-                  );
-              })()
-          )}
         </g>
 
-        {/* --- SVG Playhead --- */}
-        {/* The group is rotated 90 degrees to position the playhead at the bottom */}
-        <g transform={`rotate(90, ${DISC_SIZE / 2}, ${DISC_SIZE / 2})`}>
-          {/* Playhead Rod - Drawn horizontally, then rotated */}
-           <rect
-                x={playheadX}
-                y={playheadY}
-                width={playheadLength}
-                height={playheadThickness}
-                fill="#4a5568" // gray-700
-                rx={playheadThickness / 2} // Fully rounded ends
+        {/* Static Playhead and Controls at the top */}
+        <g>
+            {/* Playhead */}
+            <line
+                x1={DISC_SIZE / 2}
+                y1={0}
+                x2={DISC_SIZE / 2}
+                y2={(DISC_SIZE / 2) - INNER_RADIUS + TRACK_GAP}
+                stroke="rgba(107, 114, 128, 0.8)" // Gray-500
+                strokeWidth="8"
+                strokeLinecap="round"
+                className="pointer-events-none"
             />
-           {/* Buttons - Drawn horizontally, then rotated */}
-            {TRACK_RADII.map((radius, i) => {
-              const trackIndex = i; 
-              const isActive = activeTracks[trackIndex];
-              // Calculate position as if on the right side of the disc
-              const buttonCenterX = (DISC_SIZE / 2) + radius;
-              const buttonCenterY = DISC_SIZE / 2;
 
-              return (
-                  <g 
-                    key={`track-btn-svg-${trackIndex}`}
-                    onClick={(e) => { e.stopPropagation(); onToggleTrack(trackIndex); }}
-                    className="pointer-events-auto"
-                    style={{ cursor: 'pointer' }}
-                  >
+            {/* Track Toggles */}
+            {TRACK_RADII.map((radius, i) => {
+                const trackIndex = i;
+                const isActive = activeTracks[trackIndex];
+                const buttonCenterX = DISC_SIZE / 2;
+                const buttonCenterY = (DISC_SIZE / 2) - radius;
+                const buttonRadius = TRACK_WIDTH / 2; // Same size as a single note
+
+                return (
+                    <g
+                        key={`track-btn-svg-${trackIndex}`}
+                        onClick={(e) => { e.stopPropagation(); onToggleTrack(trackIndex); }}
+                        className="pointer-events-auto group"
+                        style={{ cursor: 'pointer' }}
+                    >
                         <title>Toggle Track {trackIndex + 1}</title>
-                        {/* Hitbox / Background */}
+                        {/* Outer button circle */}
                         <circle
                             cx={buttonCenterX}
                             cy={buttonCenterY}
-                            r={TRACK_WIDTH / 2}
-                            fill={isActive ? 'rgba(255, 255, 255, 0.2)' : 'rgba(55, 65, 81, 0.5)'}
-                            stroke={isActive ? 'rgba(255, 255, 255, 0.5)' : 'rgba(107, 114, 128, 0.5)'}
-                            strokeWidth="2"
+                            r={buttonRadius}
+                            fill="rgba(255, 255, 255, 0.15)"
+                            className="transition-colors group-hover:fill-white/25"
                         />
-                        {/* Inner Dot */}
-                         <circle
+                        {/* Inner indicator circle */}
+                        <circle
                             cx={buttonCenterX}
                             cy={buttonCenterY}
-                            r="6"
-                            fill={isActive ? '#ffffff' : 'rgba(107, 114, 128, 0.5)'}
-                            className="transition-colors"
+                            r={isActive ? 8 : 6} // Grow slightly when active
+                            fill={isActive ? 'white' : 'rgba(255, 255, 255, 0.3)'}
+                            className="transition-all pointer-events-none"
                         />
-                  </g>
-              );
-          })}
+                    </g>
+                );
+            })}
         </g>
       </svg>
     </div>
