@@ -270,46 +270,67 @@ const useAudioEngine = () => {
         return;
     }
     
-    // This GainNode controls the overall volume envelope for the note
+    // Main gain node for the ADSR envelope
     const gainNode = audioCtx.createGain();
     gainNode.connect(effectsInput);
-    // Quick fade-in to prevent clicks. Volume is slightly lower to prevent clipping.
-    gainNode.gain.setValueAtTime(0, audioCtx.currentTime);
-    gainNode.gain.linearRampToValueAtTime(0.4, audioCtx.currentTime + 0.02);
+    
+    // Music box envelope: sharp attack, then a long decay
+    const now = audioCtx.currentTime;
+    gainNode.gain.setValueAtTime(0, now);
+    gainNode.gain.linearRampToValueAtTime(0.4, now + 0.01); // Quick but not-too-loud attack
+    gainNode.gain.exponentialRampToValueAtTime(0.05, now + 1.5); // Slow decay to a very low sustain level
 
-    // --- Create a richer sound with multiple oscillators ---
-    // Oscillator 1: Main tone (Triangle wave - softer than sine)
+    // --- Create a cleaner, more melodic music-box tone with sine waves ---
+    const oscillators: OscillatorNode[] = [];
+
+    // Fundamental Tone
     const osc1 = audioCtx.createOscillator();
-    osc1.type = 'triangle';
-    osc1.frequency.setValueAtTime(frequency, audioCtx.currentTime);
-    osc1.connect(gainNode);
+    osc1.type = 'sine';
+    osc1.frequency.setValueAtTime(frequency, now);
+    osc1.connect(gainNode); // Connect directly
+    oscillators.push(osc1);
 
-    // Oscillator 2: Overtone (Sawtooth wave - adds brightness)
+    // First Harmonic (Octave) - clean, no detune
     const osc2 = audioCtx.createOscillator();
-    osc2.type = 'sawtooth';
-    osc2.frequency.setValueAtTime(frequency * 2, audioCtx.currentTime); // One octave higher
-
-    // The overtone should be quieter than the main tone
+    osc2.type = 'sine';
+    osc2.frequency.setValueAtTime(frequency * 2, now);
     const osc2Gain = audioCtx.createGain();
-    osc2Gain.gain.value = 0.15; 
+    osc2Gain.gain.value = 0.3; // A bit of brightness
     osc2.connect(osc2Gain).connect(gainNode);
+    oscillators.push(osc2);
 
-    // Oscillator 3: Sub-octave (Sine wave - for clean bass)
+    // Second Harmonic (Octave + Fifth)
     const osc3 = audioCtx.createOscillator();
     osc3.type = 'sine';
-    osc3.frequency.setValueAtTime(frequency / 2, audioCtx.currentTime); // One octave lower
+    osc3.frequency.setValueAtTime(frequency * 3, now);
+    const osc3Gain = audioCtx.createGain();
+    osc3Gain.gain.value = 0.1; // Add some character
+    osc3.connect(osc3Gain).connect(gainNode);
+    oscillators.push(osc3);
+    
+    // Third Harmonic (Two Octaves)
+    const osc4 = audioCtx.createOscillator();
+    osc4.type = 'sine';
+    osc4.frequency.setValueAtTime(frequency * 4, now);
+    const osc4Gain = audioCtx.createGain();
+    osc4Gain.gain.value = 0.15; // A bit more high-end sparkle
+    osc4.connect(osc4Gain).connect(gainNode);
+    oscillators.push(osc4);
+
+    // Sub-octave oscillator (for effect)
+    const subOsc = audioCtx.createOscillator();
+    subOsc.type = 'sine';
+    subOsc.frequency.setValueAtTime(frequency / 2, now);
     const subGainNode = audioCtx.createGain();
     const currentSubMix = prevEffectsRef.current?.subOctaveMix ?? 0;
     subGainNode.gain.value = currentSubMix;
-    osc3.connect(subGainNode).connect(gainNode);
+    subOsc.connect(subGainNode).connect(gainNode);
+    oscillators.push(subOsc);
 
-    // Start all oscillators
-    osc1.start(audioCtx.currentTime);
-    osc2.start(audioCtx.currentTime);
-    osc3.start(audioCtx.currentTime);
+    oscillators.forEach(osc => osc.start(now));
 
     // Store references to stop them later
-    activeSourcesRef.current.set(noteId, { oscillators: [osc1, osc2, osc3], gainNode, subGainNode });
+    activeSourcesRef.current.set(noteId, { oscillators, gainNode, subGainNode });
   }, []);
 
   const stopSustainedNote = useCallback((noteId: string) => {
@@ -317,15 +338,17 @@ const useAudioEngine = () => {
       const source = activeSourcesRef.current.get(noteId);
 
       if (audioCtx && source) {
-          // Destructure the new structure with multiple oscillators
           const { oscillators, gainNode } = source;
-          const stopTime = audioCtx.currentTime + 0.05; // 50ms fade-out
+          const now = audioCtx.currentTime;
+          const stopTime = now + 2.0; // Longer, gentler release for a bell-like quality
           
-          // Ramp down the main gain node to fade out all connected oscillators smoothly
-          gainNode.gain.setValueAtTime(gainNode.gain.value, audioCtx.currentTime); 
-          gainNode.gain.linearRampToValueAtTime(0.0001, stopTime); 
+          // Clear any envelope changes scheduled after 'now' to start the release curve from the current gain value
+          gainNode.gain.cancelScheduledValues(now);
+          gainNode.gain.setValueAtTime(gainNode.gain.value, now);
+          // Use exponential ramp for a more natural decay to silence
+          gainNode.gain.exponentialRampToValueAtTime(0.0001, stopTime); 
           
-          // Schedule all oscillators to stop after the fade-out
+          // Schedule all oscillators to stop after the fade-out is complete
           oscillators.forEach(osc => osc.stop(stopTime));
           activeSourcesRef.current.delete(noteId);
       }

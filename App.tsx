@@ -188,8 +188,13 @@ const App: React.FC = () => {
         await resumeAudio();
 
         const snapAngleForTrack = TRACK_SNAP_ANGLES[track];
-        // Use Math.floor to snap to the beginning of the slot the user clicked in.
-        const snappedAngle = (Math.floor(angle / snapAngleForTrack) * snapAngleForTrack) % 360;
+        // Snap to the center of the nearest slot by rounding to the nearest slot boundary,
+        // which visually represents the center of a potential note placement.
+        const slotCenterAngle = (Math.round(angle / snapAngleForTrack) * snapAngleForTrack);
+
+        // A note's 'angle' property must be its start angle for rendering and playback.
+        // We calculate the start angle from the determined center of the slot.
+        const snappedAngle = (slotCenterAngle - snapAngleForTrack / 2 + 360) % 360;
         
         const noteAtSnappedSlot = findNoteAt(notes, track, snappedAngle);
 
