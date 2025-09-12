@@ -2,10 +2,11 @@
 export interface Note {
   id: string;
   track: number; // 0-indexed from the outermost track
-  angle: number; // in degrees (0-360). This is the start angle.
-  durationAngle: number; // The length of the note in degrees.
+  angle: number; // in degrees (0-360).
   color: string;
   name: string;
+  // FIX: Add durationAngle to support sustained notes.
+  durationAngle: number; // The angular length of the note in degrees.
 }
 
 export interface NoteColor {
@@ -14,20 +15,67 @@ export interface NoteColor {
   freq: number;
 }
 
-export type ReverbType = 'short' | 'medium' | 'long';
-export type DistortionType = 'soft' | 'hard';
+
+// --- New Audio Effect Types ---
+
+export interface Distortion {
+  on: boolean;
+  drive: number; // 0 to 1
+  tone: number; // frequency in Hz
+  output: number; // 0 to 1
+}
+
+export interface Panner {
+  on: boolean;
+  pan: number; // -1 (left) to 1 (right)
+}
+
+export interface Phaser {
+  on: boolean;
+  rate: number; // Hz
+  depth: number; // 0 to 1
+  feedback: number; // 0 to 1
+}
+
+export interface Flanger {
+  on: boolean;
+  delay: number; // ms
+  depth: number; // ms
+  feedback: number; // 0 to 1
+  rate: number; // Hz
+}
+
+export interface Chorus {
+  on: boolean;
+  rate: number; // Hz
+  depth: number; // 0 to 1
+}
+
+export interface Tremolo {
+  on: boolean;
+  frequency: number; // Hz
+  depth: number; // 0 to 1
+}
+
+export interface Delay {
+  on: boolean;
+  time: number; // seconds
+  feedback: number; // 0 to 1
+}
+
+export interface Reverb {
+  on: boolean;
+  decay: number; // seconds
+  wet: number; // 0 to 1 (wet mix)
+}
 
 export interface AudioEffects {
-  reverbMix: number; // 0 to 1
-  reverbType: ReverbType;
-  delayMix: number; // 0 to 1
-  distortionMix: number; // 0 to 1
-  distortionType: DistortionType;
-  phaserMix: number; // 0 to 1
-  phaserRate: number; // LFO frequency in Hz
-  phaserDepth: number; // LFO gain
-  flangerMix: number; // 0 to 1
-  flangerRate: number; // LFO frequency in Hz
-  flangerDepth: number; // LFO gain (delay time modulation)
-  subOctaveMix: number; // 0 to 1
+  distortion: Distortion;
+  panner: Panner;
+  phaser: Phaser;
+  flanger: Flanger;
+  chorus: Chorus;
+  tremolo: Tremolo;
+  delay: Delay;
+  reverb: Reverb;
 }

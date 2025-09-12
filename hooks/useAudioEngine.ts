@@ -1,178 +1,151 @@
+
 import { useState, useRef, useCallback } from 'react';
-import type { AudioEffects, ReverbType, DistortionType } from '../types';
-
-// Helper function to create different distortion curves
-const makeDistortionCurve = (type: DistortionType, amount: number): Float32Array => {
-    const k = typeof amount === 'number' ? amount : 50;
-    const n_samples = 4096;
-    const curve = new Float32Array(n_samples);
-
-    for (let i = 0; i < n_samples; ++i) {
-        const x = i * 2 / n_samples - 1;
-        switch (type) {
-            case 'soft':
-                // Soft clipping (tanh)
-                curve[i] = Math.tanh(x * (k / 20));
-                break;
-            case 'hard':
-            default:
-                // Hard clipping (original aggressive curve)
-                curve[i] = ((k + 1) * x) / (1 + k * Math.abs(x));
-                break;
-        }
-    }
-    return curve;
-};
-
-// Helper function to create a simple reverb impulse response
-const createImpulseResponse = (audioCtx: AudioContext, duration: number, decay: number): AudioBuffer => {
-    const sampleRate = audioCtx.sampleRate;
-    const length = sampleRate * duration;
-    const impulse = audioCtx.createBuffer(2, length, sampleRate);
-    
-    for (let channel = 0; channel < 2; channel++) {
-        const channelData = impulse.getChannelData(channel);
-        for (let i = 0; i < length; i++) {
-            channelData[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, decay);
-        }
-    }
-    return impulse;
-};
-
+import type { AudioEffects } from '../types';
 
 const useAudioEngine = () => {
   const audioCtxRef = useRef<AudioContext | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const destinationNodeRef = useRef<MediaStreamAudioDestinationNode | null>(null);
-  const prevEffectsRef = useRef<AudioEffects | null>(null);
-  // UPDATED: Store multiple oscillators and the sub-oscillator gain node per note
-  const activeSourcesRef = useRef(new Map<string, { oscillators: OscillatorNode[], gainNode: GainNode, subGainNode: GainNode | null }>());
 
-
-  // Effect nodes
-  const effectsChainRef = useRef<{
-    input: GainNode | null,
-    reverb: ConvolverNode | null,
-    reverbWet: GainNode | null,
-    delay: DelayNode | null,
-    delayWet: GainNode | null,
-    delayFeedback: GainNode | null,
-    distortion: WaveShaperNode | null,
-    distortionWet: GainNode | null,
-    phaser: BiquadFilterNode[] | null,
-    phaserLFO: OscillatorNode | null,
-    phaserLFOGain: GainNode | null,
-    phaserWet: GainNode | null,
-    flanger: DelayNode | null,
-    flangerLFO: OscillatorNode | null,
-    flangerLFOGain: GainNode | null,
-    flangerWet: GainNode | null,
-    output: GainNode | null,
-    dry: GainNode | null,
-  }>({
-    input: null,
-    reverb: null,
-    reverbWet: null,
-    delay: null,
-    delayWet: null,
-    delayFeedback: null,
-    distortion: null,
-    distortionWet: null,
-    phaser: null,
-    phaserLFO: null,
-    phaserLFOGain: null,
-    phaserWet: null,
-    flanger: null,
-    flangerLFO: null,
-    flangerLFOGain: null,
-    flangerWet: null,
-    output: null,
-    dry: null,
-  });
+  // Effect nodes references
+  const effectsChainRef = useRef<any>({});
 
   const [isRecording, setIsRecording] = useState<boolean>(false);
 
-  // Setup the entire audio graph with effects
   const setupAudioGraph = (audioCtx: AudioContext) => {
-    const input = audioCtx.createGain();
-    const dry = audioCtx.createGain();
-    const output = audioCtx.createGain();
+    const chain: any = {};
     
-    // --- Reverb setup ---
-    const reverb = audioCtx.createConvolver();
-    reverb.buffer = createImpulseResponse(audioCtx, 2, 4); // Default 'medium' reverb
-    const reverbWet = audioCtx.createGain();
-    reverbWet.gain.value = 0;
-    input.connect(reverb).connect(reverbWet).connect(output);
+    // Master input and output
+    chain.input = audioCtx.createGain();
+    let lastNode: AudioNode = chain.input;
 
-    // --- Delay setup ---
-    const delay = audioCtx.createDelay(1.0);
-    delay.delayTime.value = 0.5;
-    const delayWet = audioCtx.createGain();
-    delayWet.gain.value = 0;
-    const delayFeedback = audioCtx.createGain();
-    delayFeedback.gain.value = 0.4;
-    input.connect(delay).connect(delayWet).connect(output);
-    delay.connect(delayFeedback).connect(delay);
+    // Helper to create a bypassable effect node
+    const createEffectUnit = (node: AudioNode) => {
+        const input = audioCtx.createGain();
+        const output = audioCtx.createGain();
+        const bypass = audioCtx.createGain();
+        bypass.gain.value = 0; // Bypassed by default
+        input.connect(node).connect(output);
+        input.connect(bypass).connect(output);
+        return { node, input, output, bypass };
+    };
 
-    // --- Distortion setup ---
-    const distortion = audioCtx.createWaveShaper();
-    const distortionWet = audioCtx.createGain();
-    distortionWet.gain.value = 0;
-    distortion.curve = makeDistortionCurve('hard', 100); // Default 'hard' distortion
-    distortion.oversample = '4x';
-    input.connect(distortion).connect(distortionWet).connect(output);
+    // 1. Panner
+    chain.panner = createEffectUnit(audioCtx.createStereoPanner());
+    lastNode.connect(chain.panner.input);
+    lastNode = chain.panner.output;
 
-    // --- Phaser setup (chain of all-pass filters modulated by an LFO) ---
-    const phaserStages = 6;
+    // 2. Distortion
+    const distortionNode = audioCtx.createWaveShaper();
+    distortionNode.oversample = '4x';
+    const toneFilter = audioCtx.createBiquadFilter();
+    toneFilter.type = 'lowpass';
+    distortionNode.connect(toneFilter);
+    chain.distortion = createEffectUnit(distortionNode);
+    chain.distortion.toneFilter = toneFilter; // Attach for later access
+    lastNode.connect(chain.distortion.input);
+    lastNode = chain.distortion.output;
+
+    // 3. Chorus
+    // Simplified chorus using modulated delay
+    const chorusDelay = audioCtx.createDelay(0.1);
+    const chorusLFO = audioCtx.createOscillator();
+    const chorusLFOGain = audioCtx.createGain();
+    chorusLFO.type = 'sine';
+    chorusLFO.connect(chorusLFOGain).connect(chorusDelay.delayTime);
+    chorusLFO.start();
+    chain.chorus = createEffectUnit(chorusDelay);
+    chain.chorus.lfo = chorusLFO;
+    chain.chorus.lfoGain = chorusLFOGain;
+    lastNode.connect(chain.chorus.input);
+    lastNode = chain.chorus.output;
+    
+    // 4. Phaser
+    const phaserStages = 4;
     const phaserFilters: BiquadFilterNode[] = [];
-    const phaserWet = audioCtx.createGain();
-    phaserWet.gain.value = 0;
-    const phaserLFO = audioCtx.createOscillator();
-    phaserLFO.type = 'sine';
-    phaserLFO.frequency.value = 0.5;
-    const phaserLFOGain = audioCtx.createGain();
-    phaserLFOGain.gain.value = 800;
-    phaserLFO.connect(phaserLFOGain);
-
-    let current_node: AudioNode = input;
+    let currentPhaserNode: AudioNode = audioCtx.createGain(); // Dummy start node
+    const phaserContainer = { input: audioCtx.createGain(), output: audioCtx.createGain(), node: currentPhaserNode };
+    let phaserChain: AudioNode = phaserContainer.input;
     for (let i = 0; i < phaserStages; i++) {
         const filter = audioCtx.createBiquadFilter();
         filter.type = 'allpass';
-        filter.Q.value = 10;
-        filter.frequency.value = 350 + i * 100; 
-        phaserLFOGain.connect(filter.frequency);
+        filter.frequency.value = 350 + i * 150;
         phaserFilters.push(filter);
-        current_node.connect(filter);
-        current_node = filter;
+        phaserChain.connect(filter);
+        phaserChain = filter;
     }
+    const phaserFeedback = audioCtx.createGain();
+    phaserChain.connect(phaserFeedback).connect(phaserContainer.input); // Feedback loop
+    phaserChain.connect(phaserContainer.output);
+
+    const phaserLFO = audioCtx.createOscillator();
+    const phaserLFOGain = audioCtx.createGain();
+    phaserLFO.type = 'sine';
+    phaserLFO.connect(phaserLFOGain);
+    phaserFilters.forEach(f => phaserLFOGain.connect(f.frequency));
     phaserLFO.start();
-    current_node.connect(phaserWet).connect(output);
+    
+    chain.phaser = createEffectUnit(phaserContainer.node);
+    chain.phaser.lfo = phaserLFO;
+    chain.phaser.lfoGain = phaserLFOGain;
+    chain.phaser.feedback = phaserFeedback;
+    chain.phaser.node = phaserContainer; // The whole filter chain construct
+    // Connect phaser unit
+    phaserContainer.input.connect(phaserFilters[0]);
+    phaserFilters[phaserFilters.length - 1].connect(phaserContainer.output);
+    chain.phaser.input.connect(phaserContainer.input);
+    phaserContainer.output.connect(chain.phaser.output);
 
-    // --- Flanger setup (modulated delay) ---
-    const flanger = audioCtx.createDelay(0.05);
-    flanger.delayTime.value = 0.005;
-    const flangerWet = audioCtx.createGain();
-    flangerWet.gain.value = 0;
+    lastNode.connect(chain.phaser.input);
+    lastNode = chain.phaser.output;
+
+    // 5. Flanger
+    const flangerDelay = audioCtx.createDelay(0.05);
     const flangerFeedback = audioCtx.createGain();
-    flangerFeedback.gain.value = 0.7;
     const flangerLFO = audioCtx.createOscillator();
-    flangerLFO.type = 'sine';
-    flangerLFO.frequency.value = 0.25;
     const flangerLFOGain = audioCtx.createGain();
-    flangerLFOGain.gain.value = 0.005;
-    flangerLFO.connect(flangerLFOGain).connect(flanger.delayTime);
+    flangerLFO.type = 'sine';
+    flangerLFO.connect(flangerLFOGain).connect(flangerDelay.delayTime);
     flangerLFO.start();
-    input.connect(flanger);
-    flanger.connect(flangerFeedback).connect(flanger);
-    flanger.connect(flangerWet).connect(output);
+    flangerDelay.connect(flangerFeedback).connect(flangerDelay);
+    chain.flanger = createEffectUnit(flangerDelay);
+    chain.flanger.feedback = flangerFeedback;
+    chain.flanger.lfo = flangerLFO;
+    chain.flanger.lfoGain = flangerLFOGain;
+    lastNode.connect(chain.flanger.input);
+    lastNode = chain.flanger.output;
 
-    // Dry signal path
-    input.connect(dry).connect(output);
-    dry.gain.value = 1.0;
+    // 6. Tremolo
+    const tremoloGain = audioCtx.createGain();
+    const tremoloLFO = audioCtx.createOscillator();
+    tremoloLFO.connect(tremoloGain.gain);
+    tremoloLFO.start();
+    chain.tremolo = createEffectUnit(tremoloGain);
+    chain.tremolo.lfo = tremoloLFO;
+    lastNode.connect(chain.tremolo.input);
+    lastNode = chain.tremolo.output;
 
-    effectsChainRef.current = { input, reverb, reverbWet, delay, delayWet, delayFeedback, distortion, distortionWet, phaser: phaserFilters, phaserLFO, phaserLFOGain, phaserWet, flanger, flangerLFO, flangerLFOGain, flangerWet, output, dry };
+    // 7. Delay
+    const delayNode = audioCtx.createDelay(2.0);
+    const delayFeedback = audioCtx.createGain();
+    delayNode.connect(delayFeedback).connect(delayNode);
+    chain.delay = createEffectUnit(delayNode);
+    chain.delay.feedback = delayFeedback;
+    lastNode.connect(chain.delay.input);
+    lastNode = chain.delay.output;
+
+    // 8. Reverb
+    const reverbNode = audioCtx.createConvolver();
+    chain.reverb = createEffectUnit(reverbNode);
+    lastNode.connect(chain.reverb.input);
+    lastNode = chain.reverb.output;
+
+    // Master Output
+    chain.output = audioCtx.createGain();
+    lastNode.connect(chain.output);
+    
+    effectsChainRef.current = chain;
   };
 
   const getAudioContext = useCallback(() => {
@@ -202,156 +175,114 @@ const useAudioEngine = () => {
             console.error("Error resuming AudioContext:", e);
         }
     }
+    return audioCtx;
   }, [getAudioContext]);
   
-  const updateEffects = useCallback((newEffects: AudioEffects) => {
-      const audioCtx = audioCtxRef.current;
-      const effects = effectsChainRef.current;
-      if (!audioCtx || !effects.dry) return;
+  const updateEffects = useCallback((effects: AudioEffects) => {
+    const audioCtx = audioCtxRef.current;
+    const chain = effectsChainRef.current;
+    if (!audioCtx || !chain.input) return;
 
-      const prevEffects = prevEffectsRef.current;
-      
-      // Handle changes that require re-creating parts of the audio graph
-      if (prevEffects?.reverbType !== newEffects.reverbType) {
-        const reverbParams = {
-            short: { duration: 1, decay: 2 },
-            medium: { duration: 2, decay: 4 },
-            long: { duration: 4, decay: 6 }
-        }[newEffects.reverbType];
-        if (effects.reverb) {
-            effects.reverb.buffer = createImpulseResponse(audioCtx, reverbParams.duration, reverbParams.decay);
+    const now = audioCtx.currentTime;
+    const RAMP_TIME = 0.05;
+    const targetTime = now + RAMP_TIME;
+
+    const setBypass = (unit: any, active: boolean) => {
+        unit.bypass.gain.linearRampToValueAtTime(active ? 0 : 1, targetTime);
+        unit.output.gain.linearRampToValueAtTime(active ? 1 : 0, targetTime);
+    };
+    
+    // --- Update each effect ---
+    setBypass(chain.distortion, effects.distortion.on);
+    if(effects.distortion.on) {
+        const curve = new Float32Array(4096);
+        const drive = effects.distortion.drive * 100;
+        for (let i = 0; i < 4096; i++) {
+            const x = (i * 2) / 4096 - 1;
+            curve[i] = ((drive + 1) * x) / (1 + drive * Math.abs(x));
         }
-      }
-      
-      if (prevEffects?.distortionType !== newEffects.distortionType) {
-        if (effects.distortion) {
-            effects.distortion.curve = makeDistortionCurve(newEffects.distortionType, 100);
+        chain.distortion.node.curve = curve;
+        chain.distortion.toneFilter.frequency.linearRampToValueAtTime(effects.distortion.tone, targetTime);
+        // Output gain is handled by the main output of the unit
+        chain.distortion.output.gain.linearRampToValueAtTime(effects.distortion.output, targetTime);
+    }
+    
+    setBypass(chain.panner, effects.panner.on);
+    chain.panner.node.pan.linearRampToValueAtTime(effects.panner.pan, targetTime);
+
+    setBypass(chain.phaser, effects.phaser.on);
+    chain.phaser.lfo.frequency.linearRampToValueAtTime(effects.phaser.rate, targetTime);
+    chain.phaser.lfoGain.gain.linearRampToValueAtTime(effects.phaser.depth * 500, targetTime);
+    chain.phaser.feedback.gain.linearRampToValueAtTime(effects.phaser.feedback, targetTime);
+
+    setBypass(chain.flanger, effects.flanger.on);
+    chain.flanger.node.delayTime.linearRampToValueAtTime(effects.flanger.delay / 1000, targetTime);
+    chain.flanger.feedback.gain.linearRampToValueAtTime(effects.flanger.feedback, targetTime);
+    chain.flanger.lfo.frequency.linearRampToValueAtTime(effects.flanger.rate, targetTime);
+    chain.flanger.lfoGain.gain.linearRampToValueAtTime(effects.flanger.depth / 1000, targetTime);
+    
+    setBypass(chain.chorus, effects.chorus.on);
+    chain.chorus.node.delayTime.value = 0.03;
+    chain.chorus.lfo.frequency.linearRampToValueAtTime(effects.chorus.rate, targetTime);
+    chain.chorus.lfoGain.gain.linearRampToValueAtTime(effects.chorus.depth * 0.01, targetTime);
+
+    setBypass(chain.tremolo, effects.tremolo.on);
+    chain.tremolo.lfo.frequency.linearRampToValueAtTime(effects.tremolo.frequency, targetTime);
+    const tremoloDepth = 1 - effects.tremolo.depth;
+    chain.tremolo.node.gain.linearRampToValueAtTime(tremoloDepth, targetTime); // Tremolo works on gain
+
+    setBypass(chain.delay, effects.delay.on);
+    chain.delay.node.delayTime.linearRampToValueAtTime(effects.delay.time, targetTime);
+    chain.delay.feedback.gain.linearRampToValueAtTime(effects.delay.feedback, targetTime);
+
+    setBypass(chain.reverb, effects.reverb.on);
+    if (effects.reverb.on && !chain.reverb.node.buffer) {
+        const decay = Math.max(0.1, effects.reverb.decay);
+        const length = audioCtx.sampleRate * decay;
+        const impulse = audioCtx.createBuffer(2, length, audioCtx.sampleRate);
+        for (let channel = 0; channel < 2; channel++) {
+            const data = impulse.getChannelData(channel);
+            for (let i = 0; i < length; i++) {
+                data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, 2.5);
+            }
         }
-      }
-
-      // Handle smooth gain transitions for mix levels
-      const RAMP_TIME = 0.1; // 100ms for smooth transition
-      const targetTime = audioCtx.currentTime + RAMP_TIME;
-
-      effects.reverbWet?.gain.linearRampToValueAtTime(newEffects.reverbMix, targetTime);
-      effects.delayWet?.gain.linearRampToValueAtTime(newEffects.delayMix, targetTime);
-      effects.distortionWet?.gain.linearRampToValueAtTime(newEffects.distortionMix, targetTime);
-      effects.phaserWet?.gain.linearRampToValueAtTime(newEffects.phaserMix, targetTime);
-      effects.flangerWet?.gain.linearRampToValueAtTime(newEffects.flangerMix, targetTime);
-
-      // Update sub-octave mix for currently playing notes
-      if (prevEffects?.subOctaveMix !== newEffects.subOctaveMix) {
-          for (const source of activeSourcesRef.current.values()) {
-              if (source.subGainNode) {
-                  source.subGainNode.gain.linearRampToValueAtTime(newEffects.subOctaveMix, targetTime);
-              }
-          }
-      }
-
-      // Update LFOs for phaser and flanger
-      effects.phaserLFO?.frequency.linearRampToValueAtTime(newEffects.phaserRate, targetTime);
-      effects.phaserLFOGain?.gain.linearRampToValueAtTime(newEffects.phaserDepth, targetTime);
-      effects.flangerLFO?.frequency.linearRampToValueAtTime(newEffects.flangerRate, targetTime);
-      effects.flangerLFOGain?.gain.linearRampToValueAtTime(newEffects.flangerDepth, targetTime);
+        chain.reverb.node.buffer = impulse;
+    }
+    chain.reverb.output.gain.linearRampToValueAtTime(effects.reverb.wet, targetTime);
 
 
-      const totalWetTarget = newEffects.reverbMix + newEffects.delayMix + newEffects.distortionMix + newEffects.phaserMix + newEffects.flangerMix;
-      const dryTarget = Math.max(0, 1 - totalWetTarget / 2);
-      effects.dry.gain.linearRampToValueAtTime(dryTarget, targetTime);
-
-      prevEffectsRef.current = newEffects;
   }, []);
 
-  const startSustainedNote = useCallback((frequency: number, noteId: string) => {
+  const playNote = useCallback((frequency: number, isSustained: boolean) => {
     const audioCtx = audioCtxRef.current;
     const effectsInput = effectsChainRef.current.input;
 
-    if (!audioCtx || audioCtx.state !== 'running' || !effectsInput || activeSourcesRef.current.has(noteId)) {
+    if (!audioCtx || audioCtx.state !== 'running' || !effectsInput) {
         return;
     }
     
-    // Main gain node for the ADSR envelope
+    const osc = audioCtx.createOscillator();
     const gainNode = audioCtx.createGain();
-    gainNode.connect(effectsInput);
     
-    // Music box envelope: sharp attack, then a long decay
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(frequency, audioCtx.currentTime);
     const now = audioCtx.currentTime;
-    gainNode.gain.setValueAtTime(0, now);
-    gainNode.gain.linearRampToValueAtTime(0.4, now + 0.01); // Quick but not-too-loud attack
-    gainNode.gain.exponentialRampToValueAtTime(0.05, now + 1.5); // Slow decay to a very low sustain level
 
-    // --- Create a cleaner, more melodic music-box tone with sine waves ---
-    const oscillators: OscillatorNode[] = [];
+    if (isSustained) {
+        // Long, gentle envelope
+        gainNode.gain.setValueAtTime(0, now);
+        gainNode.gain.linearRampToValueAtTime(0.4, now + 0.02);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, now + 1.5);
+        osc.stop(now + 1.5);
+    } else {
+        // Short, plucky envelope
+        gainNode.gain.setValueAtTime(0.5, now);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+        osc.stop(now + 0.5);
+    }
 
-    // Fundamental Tone
-    const osc1 = audioCtx.createOscillator();
-    osc1.type = 'sine';
-    osc1.frequency.setValueAtTime(frequency, now);
-    osc1.connect(gainNode); // Connect directly
-    oscillators.push(osc1);
-
-    // First Harmonic (Octave) - clean, no detune
-    const osc2 = audioCtx.createOscillator();
-    osc2.type = 'sine';
-    osc2.frequency.setValueAtTime(frequency * 2, now);
-    const osc2Gain = audioCtx.createGain();
-    osc2Gain.gain.value = 0.3; // A bit of brightness
-    osc2.connect(osc2Gain).connect(gainNode);
-    oscillators.push(osc2);
-
-    // Second Harmonic (Octave + Fifth)
-    const osc3 = audioCtx.createOscillator();
-    osc3.type = 'sine';
-    osc3.frequency.setValueAtTime(frequency * 3, now);
-    const osc3Gain = audioCtx.createGain();
-    osc3Gain.gain.value = 0.1; // Add some character
-    osc3.connect(osc3Gain).connect(gainNode);
-    oscillators.push(osc3);
-    
-    // Third Harmonic (Two Octaves)
-    const osc4 = audioCtx.createOscillator();
-    osc4.type = 'sine';
-    osc4.frequency.setValueAtTime(frequency * 4, now);
-    const osc4Gain = audioCtx.createGain();
-    osc4Gain.gain.value = 0.15; // A bit more high-end sparkle
-    osc4.connect(osc4Gain).connect(gainNode);
-    oscillators.push(osc4);
-
-    // Sub-octave oscillator (for effect)
-    const subOsc = audioCtx.createOscillator();
-    subOsc.type = 'sine';
-    subOsc.frequency.setValueAtTime(frequency / 2, now);
-    const subGainNode = audioCtx.createGain();
-    const currentSubMix = prevEffectsRef.current?.subOctaveMix ?? 0;
-    subGainNode.gain.value = currentSubMix;
-    subOsc.connect(subGainNode).connect(gainNode);
-    oscillators.push(subOsc);
-
-    oscillators.forEach(osc => osc.start(now));
-
-    // Store references to stop them later
-    activeSourcesRef.current.set(noteId, { oscillators, gainNode, subGainNode });
-  }, []);
-
-  const stopSustainedNote = useCallback((noteId: string) => {
-      const audioCtx = audioCtxRef.current;
-      const source = activeSourcesRef.current.get(noteId);
-
-      if (audioCtx && source) {
-          const { oscillators, gainNode } = source;
-          const now = audioCtx.currentTime;
-          const stopTime = now + 2.0; // Longer, gentler release for a bell-like quality
-          
-          // Clear any envelope changes scheduled after 'now' to start the release curve from the current gain value
-          gainNode.gain.cancelScheduledValues(now);
-          gainNode.gain.setValueAtTime(gainNode.gain.value, now);
-          // Use exponential ramp for a more natural decay to silence
-          gainNode.gain.exponentialRampToValueAtTime(0.0001, stopTime); 
-          
-          // Schedule all oscillators to stop after the fade-out is complete
-          oscillators.forEach(osc => osc.stop(stopTime));
-          activeSourcesRef.current.delete(noteId);
-      }
+    osc.connect(gainNode).connect(effectsInput);
+    osc.start(now);
   }, []);
 
   const startRecording = useCallback(() => {
@@ -387,7 +318,7 @@ const useAudioEngine = () => {
     });
   }, []);
 
-  return { startSustainedNote, stopSustainedNote, startRecording, stopRecording, isRecording, resumeAudio, updateEffects };
+  return { playNote, startRecording, stopRecording, isRecording, resumeAudio, updateEffects };
 };
 
 export default useAudioEngine;

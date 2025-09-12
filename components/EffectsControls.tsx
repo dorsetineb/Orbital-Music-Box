@@ -1,125 +1,149 @@
+
 import React from 'react';
-import type { AudioEffects, ReverbType, DistortionType } from '../types';
+import type { AudioEffects } from '../types';
 
 interface EffectsControlsProps {
     effects: AudioEffects;
-    onChange: <K extends keyof AudioEffects>(effect: K, value: AudioEffects[K]) => void;
+    onChange: (effectName: keyof AudioEffects, param: string, value: any) => void;
 }
 
-const ControlButton: React.FC<{onClick: () => void, isActive: boolean, children: React.ReactNode}> = ({ onClick, isActive, children }) => (
-    <button
-        onClick={onClick}
-        className={`px-3 py-1 text-sm rounded-md transition-colors ${isActive ? 'bg-cyan-600 text-white' : 'bg-gray-600 hover:bg-gray-500'}`}
-    >
-        {children}
-    </button>
+const ToggleSwitch: React.FC<{
+    checked: boolean;
+    onChange: (checked: boolean) => void;
+    label: string;
+}> = ({ checked, onChange, label }) => (
+    <div className="flex items-center gap-3">
+        <div
+            onClick={() => onChange(!checked)}
+            className={`relative w-12 h-6 rounded-full cursor-pointer transition-colors duration-300 ${checked ? 'bg-blue-500' : 'bg-slate-600'}`}
+            role="switch"
+            aria-checked={checked}
+            aria-label={label}
+        >
+            <div
+                className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform duration-300 ${checked ? 'transform translate-x-6' : ''}`}
+            ></div>
+        </div>
+        <span className="font-bold text-slate-200">{label}</span>
+    </div>
 );
 
 
+const Slider: React.FC<{
+    label: string;
+    value: number;
+    min: number;
+    max: number;
+    step: number;
+    onChange: (value: number) => void;
+}> = ({ label, value, min, max, step, onChange }) => (
+    <div className="flex items-center gap-4">
+        <label className="text-sm text-slate-400 w-28 whitespace-nowrap overflow-hidden text-ellipsis">{label}</label>
+        <input
+            type="range"
+            min={min}
+            max={max}
+            step={step}
+            value={value}
+            onChange={(e) => onChange(Number(e.target.value))}
+            className="custom-slider flex-grow"
+            aria-label={label}
+        />
+    </div>
+);
+
+
+const EffectSection: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
+    <div className="bg-slate-800/50 rounded-lg p-4 flex flex-col gap-3">{children}</div>
+);
+
 const EffectsControls: React.FC<EffectsControlsProps> = ({ effects, onChange }) => {
-    
     return (
-        <div className="w-full bg-gray-800/50 backdrop-blur-sm rounded-xl p-4 shadow-lg border border-gray-700">
-            <h3 className="text-lg font-bold text-gray-300 mb-3 text-center">Effects</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
+        <div className="w-full max-w-4xl mx-auto bg-slate-800 rounded-xl p-4 shadow-lg border border-slate-700">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <EffectSection title="Distortion">
+                    <ToggleSwitch
+                        checked={effects.distortion.on}
+                        onChange={(val) => onChange('distortion', 'on', val)}
+                        label="Distortion"
+                    />
+                    <Slider label={`Drive: ${effects.distortion.drive.toFixed(2)}`} value={effects.distortion.drive} min={0} max={1} step={0.01} onChange={(v) => onChange('distortion', 'drive', v)} />
+                    <Slider label={`Tone: ${effects.distortion.tone.toFixed(0)} Hz`} value={effects.distortion.tone} min={200} max={10000} step={100} onChange={(v) => onChange('distortion', 'tone', v)} />
+                    <Slider label={`Output: ${effects.distortion.output.toFixed(2)}`} value={effects.distortion.output} min={0} max={1} step={0.01} onChange={(v) => onChange('distortion', 'output', v)} />
+                </EffectSection>
+
+                <EffectSection title="Panner">
+                    <ToggleSwitch
+                        checked={effects.panner.on}
+                        onChange={(val) => onChange('panner', 'on', val)}
+                        label="Panner"
+                    />
+                    <Slider label={`Pan: ${effects.panner.pan.toFixed(2)}`} value={effects.panner.pan} min={-1} max={1} step={0.01} onChange={(v) => onChange('panner', 'pan', v)} />
+                </EffectSection>
+
+                <EffectSection title="Phaser">
+                    <ToggleSwitch
+                        checked={effects.phaser.on}
+                        onChange={(val) => onChange('phaser', 'on', val)}
+                        label="Phaser"
+                    />
+                    <Slider label={`Rate: ${effects.phaser.rate.toFixed(2)} Hz`} value={effects.phaser.rate} min={0.1} max={10} step={0.1} onChange={(v) => onChange('phaser', 'rate', v)} />
+                    <Slider label={`Depth: ${effects.phaser.depth.toFixed(2)}`} value={effects.phaser.depth} min={0} max={1} step={0.01} onChange={(v) => onChange('phaser', 'depth', v)} />
+                    <Slider label={`Feedback: ${effects.phaser.feedback.toFixed(2)}`} value={effects.phaser.feedback} min={0} max={0.9} step={0.01} onChange={(v) => onChange('phaser', 'feedback', v)} />
+                </EffectSection>
                 
-                {/* Reverb Controls */}
-                <div className="flex items-center gap-3">
-                    <label className="text-gray-400 text-sm w-24">Reverb Type</label>
-                    <div className="flex items-center gap-2">
-                        {(['short', 'medium', 'long'] as ReverbType[]).map(type => (
-                           <ControlButton key={type} onClick={() => onChange('reverbType', type)} isActive={effects.reverbType === type}>
-                             {type.charAt(0).toUpperCase() + type.slice(1)}
-                           </ControlButton>
-                        ))}
-                    </div>
-                </div>
-                 <div className="flex items-center gap-3">
-                    <label htmlFor="reverbMix" className="text-gray-400 text-sm w-24">Reverb Mix</label>
-                    <input
-                        id="reverbMix"
-                        type="range" min="0" max="1" step="0.01" value={effects.reverbMix}
-                        onChange={(e) => onChange('reverbMix', Number(e.target.value))}
-                        className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb-white"
+                <EffectSection title="Flanger">
+                    <ToggleSwitch
+                        checked={effects.flanger.on}
+                        onChange={(val) => onChange('flanger', 'on', val)}
+                        label="Flanger"
                     />
-                </div>
+                    <Slider label={`Delay: ${effects.flanger.delay.toFixed(1)}ms`} value={effects.flanger.delay} min={0.1} max={10} step={0.1} onChange={(v) => onChange('flanger', 'delay', v)} />
+                    <Slider label={`Depth: ${effects.flanger.depth.toFixed(1)}ms`} value={effects.flanger.depth} min={0.1} max={5} step={0.1} onChange={(v) => onChange('flanger', 'depth', v)} />
+                    <Slider label={`Feedback: ${effects.flanger.feedback.toFixed(2)}`} value={effects.flanger.feedback} min={0} max={0.9} step={0.01} onChange={(v) => onChange('flanger', 'feedback', v)} />
+                    <Slider label={`Rate: ${effects.flanger.rate.toFixed(2)} Hz`} value={effects.flanger.rate} min={0.05} max={5} step={0.05} onChange={(v) => onChange('flanger', 'rate', v)} />
+                </EffectSection>
 
-                {/* Distortion Controls */}
-                 <div className="flex items-center gap-3">
-                    <label className="text-gray-400 text-sm w-24">Distortion</label>
-                     <div className="flex items-center gap-2">
-                        {(['soft', 'hard'] as DistortionType[]).map(type => (
-                           <ControlButton key={type} onClick={() => onChange('distortionType', type)} isActive={effects.distortionType === type}>
-                             {type.charAt(0).toUpperCase() + type.slice(1)}
-                           </ControlButton>
-                        ))}
-                    </div>
-                </div>
-                 <div className="flex items-center gap-3">
-                    <label htmlFor="distortionMix" className="text-gray-400 text-sm w-24">Distortion Mix</label>
-                    <input
-                        id="distortionMix"
-                        type="range" min="0" max="1" step="0.01" value={effects.distortionMix}
-                        onChange={(e) => onChange('distortionMix', Number(e.target.value))}
-                        className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb-white"
+                <EffectSection title="Chorus">
+                    <ToggleSwitch
+                        checked={effects.chorus.on}
+                        onChange={(val) => onChange('chorus', 'on', val)}
+                        label="Chorus"
                     />
-                </div>
-
-                {/* Delay Slider */}
-                <div className="flex items-center gap-3 md:col-span-2">
-                    <label htmlFor="delayMix" className="text-gray-400 text-sm w-24">Delay Mix</label>
-                    <input
-                        id="delayMix"
-                        type="range" min="0" max="1" step="0.01" value={effects.delayMix}
-                        onChange={(e) => onChange('delayMix', Number(e.target.value))}
-                        className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb-white"
-                    />
-                </div>
+                    <Slider label={`Rate: ${effects.chorus.rate.toFixed(2)}`} value={effects.chorus.rate} min={0.1} max={10} step={0.1} onChange={(v) => onChange('chorus', 'rate', v)} />
+                    <Slider label={`Depth: ${effects.chorus.depth.toFixed(2)}`} value={effects.chorus.depth} min={0} max={1} step={0.01} onChange={(v) => onChange('chorus', 'depth', v)} />
+                </EffectSection>
                 
-                {/* Sub-Octave Slider */}
-                <div className="flex items-center gap-3 md:col-span-2">
-                    <label htmlFor="subOctaveMix" className="text-gray-400 text-sm w-24">Sub Octave</label>
-                    <input
-                        id="subOctaveMix"
-                        type="range" min="0" max="1" step="0.01" value={effects.subOctaveMix}
-                        onChange={(e) => onChange('subOctaveMix', Number(e.target.value))}
-                        className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb-white"
+                <EffectSection title="Tremolo">
+                    <ToggleSwitch
+                        checked={effects.tremolo.on}
+                        onChange={(val) => onChange('tremolo', 'on', val)}
+                        label="Tremolo"
                     />
-                </div>
+                    <Slider label={`Frequency: ${effects.tremolo.frequency.toFixed(2)}`} value={effects.tremolo.frequency} min={0.5} max={20} step={0.1} onChange={(v) => onChange('tremolo', 'frequency', v)} />
+                    <Slider label={`Depth: ${effects.tremolo.depth.toFixed(2)}`} value={effects.tremolo.depth} min={0} max={1} step={0.01} onChange={(v) => onChange('tremolo', 'depth', v)} />
+                </EffectSection>
 
-                {/* --- Spacer & Title for Modulation Effects --- */}
-                <hr className="md:col-span-2 border-gray-700 my-2" />
+                <EffectSection title="Delay">
+                     <ToggleSwitch
+                        checked={effects.delay.on}
+                        onChange={(val) => onChange('delay', 'on', val)}
+                        label="Delay"
+                    />
+                    <Slider label={`Time: ${effects.delay.time.toFixed(2)}s`} value={effects.delay.time} min={0.01} max={2} step={0.01} onChange={(v) => onChange('delay', 'time', v)} />
+                    <Slider label={`Feedback: ${effects.delay.feedback.toFixed(2)}`} value={effects.delay.feedback} min={0} max={0.95} step={0.01} onChange={(v) => onChange('delay', 'feedback', v)} />
+                </EffectSection>
 
+                <EffectSection title="Reverb">
+                    <ToggleSwitch
+                        checked={effects.reverb.on}
+                        onChange={(val) => onChange('reverb', 'on', val)}
+                        label="Reverb"
+                    />
+                    <Slider label={`Decay: ${effects.reverb.decay.toFixed(2)}s`} value={effects.reverb.decay} min={0.1} max={5} step={0.1} onChange={(v) => onChange('reverb', 'decay', v)} />
+                    <Slider label={`Wet Mix: ${effects.reverb.wet.toFixed(2)}`} value={effects.reverb.wet} min={0} max={1} step={0.01} onChange={(v) => onChange('reverb', 'wet', v)} />
+                </EffectSection>
 
-                {/* Phaser Controls */}
-                <div className="flex items-center gap-3">
-                    <label htmlFor="phaserMix" className="text-gray-400 text-sm w-24">Phaser Mix</label>
-                    <input id="phaserMix" type="range" min="0" max="1" step="0.01" value={effects.phaserMix} onChange={(e) => onChange('phaserMix', Number(e.target.value))} className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb-white" />
-                </div>
-                <div /> {/* Spacer */}
-                <div className="flex items-center gap-3">
-                    <label htmlFor="phaserRate" className="text-gray-400 text-sm w-24">Phaser Rate</label>
-                    <input id="phaserRate" type="range" min="0.1" max="8" step="0.1" value={effects.phaserRate} onChange={(e) => onChange('phaserRate', Number(e.target.value))} className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb-white" />
-                </div>
-                <div className="flex items-center gap-3">
-                    <label htmlFor="phaserDepth" className="text-gray-400 text-sm w-24">Phaser Depth</label>
-                    <input id="phaserDepth" type="range" min="100" max="1500" step="10" value={effects.phaserDepth} onChange={(e) => onChange('phaserDepth', Number(e.target.value))} className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb-white" />
-                </div>
-
-                 {/* Flanger Controls */}
-                 <div className="flex items-center gap-3">
-                    <label htmlFor="flangerMix" className="text-gray-400 text-sm w-24">Flanger Mix</label>
-                    <input id="flangerMix" type="range" min="0" max="1" step="0.01" value={effects.flangerMix} onChange={(e) => onChange('flangerMix', Number(e.target.value))} className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb-white" />
-                </div>
-                <div /> {/* Spacer */}
-                <div className="flex items-center gap-3">
-                    <label htmlFor="flangerRate" className="text-gray-400 text-sm w-24">Flanger Rate</label>
-                    <input id="flangerRate" type="range" min="0.05" max="5" step="0.05" value={effects.flangerRate} onChange={(e) => onChange('flangerRate', Number(e.target.value))} className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb-white" />
-                </div>
-                <div className="flex items-center gap-3">
-                    <label htmlFor="flangerDepth" className="text-gray-400 text-sm w-24">Flanger Depth</label>
-                    <input id="flangerDepth" type="range" min="0.001" max="0.02" step="0.001" value={effects.flangerDepth} onChange={(e) => onChange('flangerDepth', Number(e.target.value))} className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb-white" />
-                </div>
             </div>
         </div>
     );

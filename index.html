@@ -9,27 +9,46 @@
     <style>
       body {
         overscroll-behavior: none;
+        background-color: #020617; /* slate-950 */
       }
-      /* Custom slider thumb styles */
-      .slider-thumb-white::-webkit-slider-thumb {
+      /* Custom Slider Styles */
+      .custom-slider {
         -webkit-appearance: none;
         appearance: none;
-        margin-top: -8px; /* To center the thumb on the track */
-        width: 20px;
-        height: 20px;
-        background: #ffffff;
-        cursor: pointer;
-        border-radius: 50%;
-        border: 1px solid #ddd;
+        width: 100%;
+        height: 4px;
+        background: #334155; /* slate-700 */
+        border-radius: 2px;
+        outline: none;
+        transition: opacity .2s;
       }
 
-      .slider-thumb-white::-moz-range-thumb {
-        width: 20px;
-        height: 20px;
-        background: #ffffff;
+      .custom-slider::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 16px;
+        height: 16px;
+        background: #38bdf8; /* light-blue-400 */
         cursor: pointer;
         border-radius: 50%;
-        border: 1px solid #ddd;
+      }
+
+      .custom-slider::-moz-range-thumb {
+        width: 16px;
+        height: 16px;
+        background: #38bdf8; /* light-blue-400 */
+        cursor: pointer;
+        border-radius: 50%;
+        border: none;
+      }
+      
+      /* Custom Toggle Switch */
+      .toggle-checkbox:checked {
+        right: 0;
+        border-color: #3b82f6; /* blue-500 */
+      }
+      .toggle-checkbox:checked + .toggle-label {
+        background-color: #3b82f6; /* blue-500 */
       }
     </style>
   <script type="importmap">
