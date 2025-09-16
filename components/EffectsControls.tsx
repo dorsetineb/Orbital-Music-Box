@@ -4,7 +4,8 @@ import type { AudioEffects } from '../types';
 
 interface EffectsControlsProps {
     effects: AudioEffects;
-    onChange: (effectName: keyof AudioEffects, param: string, value: any) => void;
+    // FIX: Corrected onChange prop type signature
+    onChange: <K extends keyof AudioEffects>(effectName: K, param: keyof AudioEffects[K], value: AudioEffects[K][keyof AudioEffects[K]]) => void;
 }
 
 const ToggleSwitch: React.FC<{

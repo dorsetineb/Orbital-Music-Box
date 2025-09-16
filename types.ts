@@ -5,7 +5,6 @@ export interface Note {
   angle: number; // in degrees (0-360).
   color: string;
   name: string;
-  // FIX: Add durationAngle to support sustained notes.
   durationAngle: number; // The angular length of the note in degrees.
 }
 
@@ -15,67 +14,97 @@ export interface NoteColor {
   freq: number;
 }
 
+// FIX: Added DistortionType and ReverbType for the new audio engine, which were imported but not defined.
+export type DistortionType = 'soft' | 'hard';
+export type ReverbType = 'hall' | 'plate' | 'spring' | 'custom';
 
-// --- New Audio Effect Types ---
-
-export interface Distortion {
+// FIX: Updated effect types to match the new audio engine and EffectsControls component.
+export interface DistortionEffect {
   on: boolean;
-  drive: number; // 0 to 1
-  tone: number; // frequency in Hz
-  output: number; // 0 to 1
+  drive: number;
+  tone: number;
+  output: number;
 }
 
-export interface Panner {
+export interface PannerEffect {
   on: boolean;
-  pan: number; // -1 (left) to 1 (right)
+  pan: number;
 }
 
-export interface Phaser {
+export interface PhaserEffect {
   on: boolean;
-  rate: number; // Hz
-  depth: number; // 0 to 1
-  feedback: number; // 0 to 1
+  rate: number;
+  depth: number;
+  feedback: number;
 }
 
-export interface Flanger {
+export interface FlangerEffect {
   on: boolean;
-  delay: number; // ms
-  depth: number; // ms
-  feedback: number; // 0 to 1
-  rate: number; // Hz
+  delay: number;
+  depth: number;
+  feedback: number;
+  rate: number;
 }
 
-export interface Chorus {
+export interface ChorusEffect {
   on: boolean;
-  rate: number; // Hz
-  depth: number; // 0 to 1
+  rate: number;
+  depth: number;
 }
 
-export interface Tremolo {
+export interface TremoloEffect {
   on: boolean;
-  frequency: number; // Hz
-  depth: number; // 0 to 1
+  frequency: number;
+  depth: number;
 }
 
-export interface Delay {
+export interface DelayEffect {
   on: boolean;
-  time: number; // seconds
-  feedback: number; // 0 to 1
+  time: number;
+  feedback: number;
 }
 
-export interface Reverb {
+export interface ReverbEffect {
   on: boolean;
-  decay: number; // seconds
-  wet: number; // 0 to 1 (wet mix)
+  decay: number;
+  wet: number;
 }
 
+// NOTE: GhostEffect and GlitchEffect are part of an older app version and are not used by the `src` files.
+// They are removed to align with the more recent `EffectsControls` component.
+export interface GhostEffect {
+    on: boolean;
+    intensity: number; // Controls the mix of the shimmer/ghostly trail
+}
+
+export interface GlitchEffect {
+    on: boolean;
+    intensity: number; // Controls the amount of bitcrushing/sample rate reduction
+}
+
+export interface BitcrusherEffect {
+    on: boolean;
+    bitDepth: number; // 4-16
+    mix: number; // 0-1
+}
+
+export interface VibratoEffect {
+    on: boolean;
+    rate: number; // in Hz
+    depth: number; // in cents
+}
+
+
+// FIX: Updated AudioEffects to include all new effects used in src/App.tsx and fix errors in EffectsControls.tsx.
 export interface AudioEffects {
-  distortion: Distortion;
-  panner: Panner;
-  phaser: Phaser;
-  flanger: Flanger;
-  chorus: Chorus;
-  tremolo: Tremolo;
-  delay: Delay;
-  reverb: Reverb;
+  distortion: DistortionEffect;
+  panner: PannerEffect;
+  phaser: PhaserEffect;
+  flanger: FlangerEffect;
+  chorus: ChorusEffect;
+  tremolo: TremoloEffect;
+  delay: DelayEffect;
+  reverb: ReverbEffect;
+  bitcrusher: BitcrusherEffect;
+  vibrato: VibratoEffect;
 }

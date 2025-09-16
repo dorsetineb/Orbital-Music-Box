@@ -39,6 +39,10 @@ const createImpulseResponse = (audioCtx: AudioContext, duration: number, decay: 
     return impulse;
 };
 
+type ActiveNode = {
+    osc: OscillatorNode;
+    gain: GainNode;
+};
 
 const useAudioEngine = () => {
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -46,6 +50,7 @@ const useAudioEngine = () => {
   const audioChunksRef = useRef<Blob[]>([]);
   const destinationNodeRef = useRef<MediaStreamAudioDestinationNode | null>(null);
   const prevEffectsRef = useRef<AudioEffects | null>(null);
+  const previewNodeRef = useRef<ActiveNode | null>(null);
 
   // Effect nodes
   const effectsChainRef = useRef<{
@@ -104,7 +109,7 @@ const useAudioEngine = () => {
     input.connect(reverb).connect(reverbWet).connect(output);
 
     // --- Delay setup ---
-    const delay = audioCtx.createDelay(1.0);
+    const delay = audioCtx.createDelay(2.0);
     delay.delayTime.value = 0.5;
     const delayWet = audioCtx.createGain();
     delayWet.gain.value = 0;
@@ -201,57 +206,70 @@ const useAudioEngine = () => {
     }
   }, [getAudioContext]);
   
+  // FIX: Updated updateEffects to use the new nested AudioEffects structure
   const updateEffects = useCallback((newEffects: AudioEffects) => {
       const audioCtx = audioCtxRef.current;
       const effects = effectsChainRef.current;
       if (!audioCtx || !effects.dry) return;
-
-      const prevEffects = prevEffectsRef.current;
       
-      // Handle changes that require re-creating parts of the audio graph
-      if (prevEffects?.reverbType !== newEffects.reverbType) {
-        const reverbParams = {
-            short: { duration: 1, decay: 2 },
-            medium: { duration: 2, decay: 4 },
-            long: { duration: 4, decay: 6 }
-        }[newEffects.reverbType];
-        if (effects.reverb) {
-            effects.reverb.buffer = createImpulseResponse(audioCtx, reverbParams.duration, reverbParams.decay);
-        }
-      }
-      
-      if (prevEffects?.distortionType !== newEffects.distortionType) {
-        if (effects.distortion) {
-            effects.distortion.curve = makeDistortionCurve(newEffects.distortionType, 100);
-        }
-      }
-
-      // Handle smooth gain transitions for mix levels
       const RAMP_TIME = 0.1; // 100ms for smooth transition
       const targetTime = audioCtx.currentTime + RAMP_TIME;
 
-      effects.reverbWet?.gain.linearRampToValueAtTime(newEffects.reverbMix, targetTime);
-      effects.delayWet?.gain.linearRampToValueAtTime(newEffects.delayMix, targetTime);
-      effects.distortionWet?.gain.linearRampToValueAtTime(newEffects.distortionMix, targetTime);
-      effects.phaserWet?.gain.linearRampToValueAtTime(newEffects.phaserMix, targetTime);
-      effects.flangerWet?.gain.linearRampToValueAtTime(newEffects.flangerMix, targetTime);
+      // Update Reverb
+      if (effects.reverb) {
+        // NOTE: The UI 'decay' doesn't map directly to regenerating the impulse response here.
+        // We'll just control the wet mix. A more advanced version could regenerate the buffer.
+        effects.reverbWet?.gain.linearRampToValueAtTime(newEffects.reverb.on ? newEffects.reverb.wet : 0, targetTime);
+      }
+      
+      // Update Delay
+      if (effects.delay && effects.delayFeedback && effects.delayWet) {
+        effects.delay.delayTime.linearRampToValueAtTime(newEffects.delay.time, targetTime);
+        effects.delayFeedback.gain.linearRampToValueAtTime(newEffects.delay.feedback, targetTime);
+        effects.delayWet.gain.linearRampToValueAtTime(newEffects.delay.on ? 0.5 : 0, targetTime); // Fixed wet level for delay
+      }
 
-      // Update LFOs for phaser and flanger
-      effects.phaserLFO?.frequency.linearRampToValueAtTime(newEffects.phaserRate, targetTime);
-      effects.phaserLFOGain?.gain.linearRampToValueAtTime(newEffects.phaserDepth, targetTime);
-      effects.flangerLFO?.frequency.linearRampToValueAtTime(newEffects.flangerRate, targetTime);
-      effects.flangerLFOGain?.gain.linearRampToValueAtTime(newEffects.flangerDepth, targetTime);
+      // Update Distortion
+      if (effects.distortion && effects.distortionWet) {
+        // NOTE: A more advanced version could map drive/tone to the curve generation.
+        // For now, we control the wet mix via the 'output' parameter.
+        effects.distortionWet.gain.linearRampToValueAtTime(newEffects.distortion.on ? newEffects.distortion.output : 0, targetTime);
+      }
+      
+      // Update Phaser
+      if (effects.phaserLFO && effects.phaserLFOGain && effects.phaserWet) {
+         effects.phaserLFO.frequency.linearRampToValueAtTime(newEffects.phaser.rate, targetTime);
+         // NOTE: The hook's depth is a gain value, not 0-1. Mapping may be needed for different sounds.
+         effects.phaserLFOGain.gain.linearRampToValueAtTime(newEffects.phaser.depth * 1000, targetTime); 
+         effects.phaserWet.gain.linearRampToValueAtTime(newEffects.phaser.on ? 0.7 : 0, targetTime);
+      }
+      
+      // Update Flanger
+      if (effects.flanger && effects.flangerLFO && effects.flangerLFOGain && effects.flangerWet) {
+        // Flanger delay is typically very short. The UI value is in ms.
+        effects.flanger.delayTime.linearRampToValueAtTime(newEffects.flanger.delay / 1000, targetTime);
+        effects.flangerLFO.frequency.linearRampToValueAtTime(newEffects.flanger.rate, targetTime);
+        // Flanger depth is also very small. The UI value is in ms.
+        effects.flangerLFOGain.gain.linearRampToValueAtTime(newEffects.flanger.depth / 1000, targetTime);
+        effects.flangerWet.gain.linearRampToValueAtTime(newEffects.flanger.on ? 0.6 : 0, targetTime);
+      }
 
+      const totalWet = [
+        newEffects.reverb.on ? newEffects.reverb.wet : 0,
+        newEffects.delay.on ? 0.5 : 0, // Using fixed wet values where UI doesn't provide them
+        newEffects.distortion.on ? newEffects.distortion.output : 0,
+        newEffects.phaser.on ? 0.7 : 0,
+        newEffects.flanger.on ? 0.6 : 0,
+      ].reduce((sum, val) => sum + val, 0);
 
-      const totalWetTarget = newEffects.reverbMix + newEffects.delayMix + newEffects.distortionMix + newEffects.phaserMix + newEffects.flangerMix;
-      const dryTarget = Math.max(0, 1 - totalWetTarget / 2);
+      const dryTarget = Math.max(0, 1 - totalWet / 2);
       effects.dry.gain.linearRampToValueAtTime(dryTarget, targetTime);
 
       prevEffectsRef.current = newEffects;
   }, []);
 
   const playNote = useCallback((frequency: number) => {
-    const audioCtx = audioCtxRef.current;
+    const audioCtx = getAudioContext();
     const effectsInput = effectsChainRef.current.input;
 
     if (!audioCtx || audioCtx.state !== 'running' || !effectsInput) {
@@ -271,10 +289,41 @@ const useAudioEngine = () => {
 
     oscillator.start(audioCtx.currentTime);
     oscillator.stop(audioCtx.currentTime + 0.5);
-  }, []);
+  }, [getAudioContext]);
+
+  const playPreviewNote = useCallback((frequency: number) => {
+    const audioCtx = getAudioContext();
+    const effectsInput = effectsChainRef.current.input;
+    if (!audioCtx || !effectsInput) return;
+
+    if (previewNodeRef.current) {
+        const { osc, gain } = previewNodeRef.current;
+        const now = audioCtx.currentTime;
+        gain.gain.cancelScheduledValues(now);
+        gain.gain.linearRampToValueAtTime(0, now + 0.02);
+        osc.stop(now + 0.025);
+    }
+
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    const now = audioCtx.currentTime;
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(frequency, now);
+    
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(0.4, now + 0.01);
+    gain.gain.linearRampToValueAtTime(0, now + 0.2); // Faster decay for preview
+
+    osc.connect(gain).connect(effectsInput);
+    osc.start(now);
+    osc.stop(now + 0.25);
+    
+    previewNodeRef.current = { osc, gain };
+  }, [getAudioContext]);
 
   const startRecording = useCallback(() => {
-    const audioCtx = audioCtxRef.current;
+    const audioCtx = getAudioContext();
     if (!destinationNodeRef.current || !audioCtx || audioCtx.state !== 'running') return;
     
     const stream = destinationNodeRef.current.stream;
@@ -287,7 +336,7 @@ const useAudioEngine = () => {
     audioChunksRef.current = [];
     mediaRecorderRef.current.start();
     setIsRecording(true);
-  }, []);
+  }, [getAudioContext]);
 
   const stopRecording = useCallback((): Promise<string> => {
     return new Promise((resolve) => {
@@ -306,7 +355,7 @@ const useAudioEngine = () => {
     });
   }, []);
 
-  return { playNote, startRecording, stopRecording, isRecording, resumeAudio, updateEffects };
+  return { playNote, playPreviewNote, startRecording, stopRecording, isRecording, resumeAudio, updateEffects };
 };
 
 export default useAudioEngine;

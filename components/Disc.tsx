@@ -1,6 +1,6 @@
 import React from 'react';
 import type { Note } from '../types';
-import { DISC_SIZE, TRACK_COUNT, TRACK_WIDTH, INNER_RADIUS, TRACK_GAP, TRACK_RADII, TRACK_SNAP_ANGLES } from '../constants';
+import { DISC_SIZE, TRACK_COUNT, TRACK_WIDTH, INNER_RADIUS, TRACK_GAP, TRACK_RADII } from '../constants';
 
 interface DiscProps {
   notes: Note[];
@@ -45,31 +45,6 @@ const polarToCartesian = (centerX: number, centerY: number, radius: number, angl
     };
 };
 
-const describeArc = (x: number, y: number, radius: number, startAngle: number, endAngle: number): string => {
-    // Prevent rendering artifacts for very small arcs by ensuring a minimum length.
-    if (Math.abs(endAngle - startAngle) < 0.01) {
-        endAngle = startAngle + 0.01;
-    }
-    // Handle full circles
-    const fullCircle = Math.abs(endAngle - startAngle) >= 360;
-    if (fullCircle) {
-        endAngle = startAngle + 359.99;
-    }
-
-    const start = polarToCartesian(x, y, radius, startAngle);
-    const end = polarToCartesian(x, y, radius, endAngle);
-    
-    const largeArcFlag = Math.abs(endAngle - startAngle) <= 180 ? '0' : '1';
-    
-    const d = [
-        'M', start.x, start.y,
-        'A', radius, radius, 0, largeArcFlag, 1, end.x, end.y,
-    ].join(' ');
-
-    return d;
-};
-
-
 const Disc: React.FC<DiscProps> = (props) => {
     const { 
         notes, 
@@ -101,18 +76,25 @@ const Disc: React.FC<DiscProps> = (props) => {
       angle += 360;
     }
 
-    // Adjust for disc rotation to get the logical angle of the note
+    // Adjust for disc rotation to get the logical angle on the disc itself
     const adjustedAngle = (angle - rotation + 360) % 360;
     
-    for (let i = 0; i < TRACK_COUNT; i++) {
-        // We check from the inside out to find the track
-        const trackStartRadius = INNER_RADIUS + i * (TRACK_WIDTH + TRACK_GAP);
-        const trackEndRadius = trackStartRadius + TRACK_WIDTH;
-        if (distance >= trackStartRadius && distance <= trackEndRadius) {
-            // Return the logical track index (0 is outermost)
-            return { track: TRACK_COUNT - 1 - i, angle: adjustedAngle };
+    let closestTrackIndex = -1;
+    let minRadialDistance = Infinity;
+
+    TRACK_RADII.forEach((radius, index) => {
+        const radialDistance = Math.abs(distance - radius);
+        if (radialDistance < minRadialDistance) {
+            minRadialDistance = radialDistance;
+            closestTrackIndex = index;
         }
+    });
+
+    // If the click is within half a track's width of the center of the closest track, we have a match.
+    if (closestTrackIndex !== -1 && minRadialDistance <= TRACK_WIDTH / 2) {
+        return { track: closestTrackIndex, angle: adjustedAngle };
     }
+    
     return null;
   };
 
@@ -123,6 +105,15 @@ const Disc: React.FC<DiscProps> = (props) => {
           onDiscClick(coords.track, coords.angle);
       }
   };
+  
+  const firstRadius = TRACK_RADII[0];
+  const lastRadius = TRACK_RADII[TRACK_COUNT - 1];
+  const padding = 20;
+  const rectY = (DISC_SIZE / 2) - firstRadius - TRACK_WIDTH / 2 - padding;
+  const rectHeight = firstRadius - lastRadius + TRACK_WIDTH + (padding * 2);
+  const rectWidthWithPadding = TRACK_WIDTH + (padding * 2);
+  const rectXWithPadding = DISC_SIZE / 2 - rectWidthWithPadding / 2;
+
 
   return (
     <div className="w-full h-full">
@@ -145,86 +136,18 @@ const Disc: React.FC<DiscProps> = (props) => {
               strokeWidth={TRACK_WIDTH}
             />
           ))}
-
-          {/* Snap Point Indicators */}
-          {!isPlaying && TRACK_SNAP_ANGLES.map((snapAngle, trackIndex) => {
-              const numPoints = 360 / snapAngle;
-              const radius = TRACK_RADII[trackIndex];
-              return Array.from({ length: numPoints }).map((_, pointIndex) => {
-                  // Render the dot in the middle of the slot for correct visual alignment.
-                  const angle = pointIndex * snapAngle + snapAngle / 2;
-                  const pos = polarToCartesian(DISC_SIZE/2, DISC_SIZE/2, radius, angle);
-                  return (
-                      <circle
-                          key={`snap-${trackIndex}-${pointIndex}`}
-                          cx={pos.x}
-                          cy={pos.y}
-                          r="2"
-                          fill="rgba(255, 255, 255, 0.1)"
-                          className="pointer-events-none"
-                      />
-                  );
-              });
-          })}
           
           {/* Notes */}
           {notes.map(note => {
             const trackRadius = TRACK_RADII[note.track];
-            // Use an epsilon to handle floating point inaccuracies.
-            const isSingleNote = note.durationAngle <= TRACK_SNAP_ANGLES[note.track] + 0.01;
-
-            if (isSingleNote) {
-                // --- RENDER CIRCLE for single notes ---
-                // Calculate the center of the slot for correct visual positioning.
-                const centerAngle = note.angle + note.durationAngle / 2;
-                const pos = polarToCartesian(DISC_SIZE / 2, DISC_SIZE / 2, trackRadius, centerAngle);
-                const noteRadius = TRACK_WIDTH / 2;
-                return (
-                    <g key={note.id} className="pointer-events-none">
-                        {/* Border */}
-                        <circle cx={pos.x} cy={pos.y} r={noteRadius + 3} fill={lightenHexColor(note.color, 40)} />
-                        {/* Fill */}
-                        <circle cx={pos.x} cy={pos.y} r={noteRadius} fill={note.color} />
-                    </g>
-                );
-            } else {
-                // --- RENDER ARC for sustained notes ---
-                let startAngle = note.angle;
-                let endAngle = note.angle + note.durationAngle;
-
-                // Compensate for the round line cap, which extends half the stroke width visually.
-                const capOffsetAngle = (Math.atan((TRACK_WIDTH / 2) / trackRadius) * 180 / Math.PI);
-                const compensatedStart = startAngle + capOffsetAngle;
-                const compensatedEnd = endAngle - capOffsetAngle;
-
-                // Only apply the compensation if the note is long enough, to prevent visual glitches.
-                if (compensatedEnd > compensatedStart) {
-                    startAngle = compensatedStart;
-                    endAngle = compensatedEnd;
-                }
-
-                const pathData = describeArc(DISC_SIZE / 2, DISC_SIZE / 2, trackRadius, startAngle, endAngle);
-                return (
-                    <g key={note.id} className="pointer-events-none">
-                        {/* Border */}
-                        <path
-                            d={pathData}
-                            fill="none"
-                            stroke={lightenHexColor(note.color, 40)}
-                            strokeWidth={TRACK_WIDTH + 6}
-                            strokeLinecap="round"
-                        />
-                        {/* Fill */}
-                        <path
-                            d={pathData}
-                            fill="none"
-                            stroke={note.color}
-                            strokeWidth={TRACK_WIDTH}
-                            strokeLinecap="round"
-                        />
-                    </g>
-                );
-            }
+            const angle = note.angle + note.durationAngle / 2;
+            const pos = polarToCartesian(DISC_SIZE / 2, DISC_SIZE / 2, trackRadius, angle);
+            return (
+              <g key={note.id} className="pointer-events-none">
+                {/* Fill */}
+                <circle cx={pos.x} cy={pos.y} r={TRACK_WIDTH / 2} fill={note.color} />
+              </g>
+            );
           })}
         </g>
 
@@ -236,42 +159,75 @@ const Disc: React.FC<DiscProps> = (props) => {
                 y1={0}
                 x2={DISC_SIZE / 2}
                 y2={(DISC_SIZE / 2) - INNER_RADIUS + TRACK_GAP}
-                stroke="rgba(107, 114, 128, 0.8)" // Gray-500
-                strokeWidth="8"
+                stroke="#ffffff"
+                strokeWidth="4"
                 strokeLinecap="round"
                 className="pointer-events-none"
+                filter="url(#glow)"
             />
+            <defs>
+                <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+                    <feGaussianBlur in="SourceGraphic" stdDeviation="4" result="blur" />
+                    <feMerge>
+                        <feMergeNode in="blur" />
+                        <feMergeNode in="SourceGraphic" />
+                    </feMerge>
+                </filter>
+            </defs>
 
+            {/* Track Toggles Background */}
+            <rect
+                x={rectXWithPadding}
+                y={rectY}
+                width={rectWidthWithPadding}
+                height={rectHeight}
+                rx={rectWidthWithPadding / 2}
+                ry={rectWidthWithPadding / 2}
+                fill="rgba(255, 255, 255, 0.15)"
+            />
+            
             {/* Track Toggles */}
             {TRACK_RADII.map((radius, i) => {
-                const trackIndex = i;
-                const isActive = activeTracks[trackIndex];
+                const logicalTrackIndex = i;
+                const isActive = activeTracks[logicalTrackIndex];
                 const buttonCenterX = DISC_SIZE / 2;
                 const buttonCenterY = (DISC_SIZE / 2) - radius;
-                const buttonRadius = TRACK_WIDTH / 2; // Same size as a single note
+                const buttonRadius = TRACK_WIDTH / 2;
 
                 return (
                     <g
-                        key={`track-btn-svg-${trackIndex}`}
-                        onClick={(e) => { e.stopPropagation(); onToggleTrack(trackIndex); }}
-                        className="pointer-events-auto group"
+                        key={`track-btn-svg-${logicalTrackIndex}`}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={(e) => { e.stopPropagation(); onToggleTrack(logicalTrackIndex); }}
+                        className="pointer-events-auto"
                         style={{ cursor: 'pointer' }}
                     >
-                        <title>Toggle Track {trackIndex + 1}</title>
-                        {/* Outer button circle */}
+                        <title>Toggle Track {logicalTrackIndex + 1}</title>
+                        {/* Hitbox */}
                         <circle
                             cx={buttonCenterX}
                             cy={buttonCenterY}
                             r={buttonRadius}
-                            fill="rgba(255, 255, 255, 0.15)"
-                            className="transition-colors group-hover:fill-white/25"
+                            fill="transparent"
+                        />
+                        {/* Outline */}
+                        <circle
+                            cx={buttonCenterX}
+                            cy={buttonCenterY}
+                            r={TRACK_WIDTH / 2}
+                            fill="none"
+                            stroke="rgba(255, 255, 255, 0.2)"
+                            strokeWidth="1.5"
+                            className="pointer-events-none"
                         />
                         {/* Inner indicator circle */}
                         <circle
                             cx={buttonCenterX}
                             cy={buttonCenterY}
                             r={isActive ? 8 : 6} // Grow slightly when active
-                            fill={isActive ? 'white' : 'rgba(255, 255, 255, 0.3)'}
+                            fill={isActive ? '#ffffff' : 'rgba(255, 255, 255, 0.3)'}
+                            stroke={isActive ? 'rgba(0,0,0,0.2)' : 'none'}
+                            strokeWidth="1"
                             className="transition-all pointer-events-none"
                         />
                     </g>

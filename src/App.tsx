@@ -14,23 +14,22 @@ const App: React.FC = () => {
   const [rotation, setRotation] = useState<number>(0);
   const [recordedUrl, setRecordedUrl] = useState<string | null>(null);
   const [activeTracks, setActiveTracks] = useState<boolean[]>([true, true, true, true]);
-  const [isEffectsPanelOpen, setIsEffectsPanelOpen] = useState<boolean>(false);
+  const [isEffectsPanelOpen, setIsEffectsPanelOpen] = useState<boolean>(true); // FIX: Set to true as toggle is not available in provided Controls
+  // FIX: Updated effects state to use the new nested structure from types.ts
   const [effects, setEffects] = useState<AudioEffects>({
-    reverbMix: 0,
-    reverbType: 'medium',
-    delayMix: 0,
-    distortionMix: 0,
-    distortionType: 'hard',
-    phaserMix: 0,
-    phaserRate: 0.5,
-    phaserDepth: 800,
-    flangerMix: 0,
-    flangerRate: 0.2,
-    flangerDepth: 0.005,
+    distortion: { on: false, drive: 0.5, tone: 4000, output: 0.5 },
+    panner: { on: false, pan: 0 },
+    phaser: { on: false, rate: 1, depth: 0.5, feedback: 0.5 },
+    flanger: { on: false, delay: 3, depth: 2, feedback: 0.5, rate: 0.5 },
+    chorus: { on: false, rate: 1.5, depth: 0.7 },
+    tremolo: { on: false, frequency: 5, depth: 0.5 },
+    delay: { on: false, time: 0.5, feedback: 0.5 },
+    reverb: { on: false, decay: 2, wet: 0.5 },
   });
 
   const { 
     playNote, 
+    playPreviewNote,
     startRecording, 
     stopRecording, 
     isRecording, 
@@ -83,6 +82,8 @@ const App: React.FC = () => {
                 angle: snappedAngle,
                 color: activeColor.color,
                 name: activeColor.name,
+                // FIX: Add durationAngle for note creation, consistent with types.ts and Disc.tsx
+                durationAngle: snapAngleForTrack,
             };
             setNotes(prev => [...prev, newNote]);
         }
@@ -111,8 +112,12 @@ const App: React.FC = () => {
     setRotationSpeed(newSpeed);
   };
 
-  const handleColorSelect = (color: NoteColor) => {
+  const handleColorSelect = async (color: NoteColor) => {
+    await resumeAudio();
     setActiveColor(color);
+    if (playPreviewNote) {
+      playPreviewNote(color.freq);
+    }
   };
 
   const handleClear = () => {
@@ -127,8 +132,20 @@ const App: React.FC = () => {
     });
   };
   
-  const handleEffectChange = <K extends keyof AudioEffects>(effect: K, value: AudioEffects[K]) => {
-    setEffects(prev => ({ ...prev, [effect]: value }));
+  // FIX: Updated handleEffectChange to match the signature expected by EffectsControls and the new state structure.
+  // FIX: Improved type safety by using generics, removing the need for `as any`.
+  const handleEffectChange = <K extends keyof AudioEffects>(
+    effectName: K,
+    param: keyof AudioEffects[K],
+    value: AudioEffects[K][keyof AudioEffects[K]]
+  ) => {
+    setEffects(prev => ({
+      ...prev,
+      [effectName]: {
+        ...prev[effectName],
+        [param]: value,
+      },
+    }));
   };
   
   const handleToggleEffectsPanel = () => {
@@ -140,23 +157,19 @@ const App: React.FC = () => {
       const degreesPerSecond = 360 / rotationSpeed;
       const degreesPerFrame = degreesPerSecond / 60; // Assuming 60fps
       const newRotation = (prevRotation + degreesPerFrame) % 360;
-      const playheadPosition = 90; // Playhead is at the bottom (pointing down)
+      // FIX: Corrected playhead position to 0 (top of the disc) to match visual representation in Disc.tsx
+      const playheadPosition = 0;
 
       notes.forEach(note => {
         const prevNoteVisualAngle = (note.angle + prevRotation) % 360;
         const currentNoteVisualAngle = (note.angle + newRotation) % 360;
         
         let crossed = false;
-        // Standard case: note crosses playhead without wrapping around 360 degrees
-        if (prevNoteVisualAngle < currentNoteVisualAngle) {
-            if (prevNoteVisualAngle < playheadPosition && currentNoteVisualAngle >= playheadPosition) {
-                crossed = true;
-            }
-        // Wrap-around case: e.g., prev angle is 359, current is 1.
-        } else if (prevNoteVisualAngle > currentNoteVisualAngle) { 
-            if (prevNoteVisualAngle < playheadPosition || currentNoteVisualAngle >= playheadPosition) {
-                crossed = true;
-            }
+        // FIX: Corrected note-triggering logic to handle wrapping around 360 degrees accurately.
+        if (prevNoteVisualAngle > 270 && currentNoteVisualAngle < 90) {
+            crossed = true; // Wrapped around 360/0
+        } else if (prevNoteVisualAngle < playheadPosition && currentNoteVisualAngle >= playheadPosition) {
+            crossed = true;
         }
 
         if (crossed) {
@@ -210,7 +223,8 @@ const App: React.FC = () => {
               notes={notes}
               rotation={rotation} 
               isPlaying={isPlaying} 
-              onAddOrRemoveNote={handleAddOrRemoveNote}
+              // FIX: Corrected prop name from onAddOrRemoveNote to onDiscClick to match Disc component's props.
+              onDiscClick={handleAddOrRemoveNote}
               activeTracks={activeTracks}
               onToggleTrack={handleToggleTrack}
             />
@@ -229,10 +243,12 @@ const App: React.FC = () => {
             onColorSelect={handleColorSelect}
             onClear={handleClear}
             recordedUrl={recordedUrl}
-            isEffectsPanelOpen={isEffectsPanelOpen}
-            onToggleEffectsPanel={handleToggleEffectsPanel}
+            // FIX: Removed props not present in the provided Controls.tsx component to prevent errors.
+            isSustainMode={false} // Placeholder, as sustain is not part of this app version
+            onToggleSustainMode={() => {}} // Placeholder
         />
         <div className={`w-full transition-all duration-500 ease-in-out ${isEffectsPanelOpen ? 'opacity-100 max-h-[500px] visible' : 'opacity-0 max-h-0 invisible'}`}>
+          {/* FIX: Corrected onChange prop to match new signature */}
           {isEffectsPanelOpen && <EffectsControls effects={effects} onChange={handleEffectChange} />}
         </div>
       </div>

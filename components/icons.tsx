@@ -1,7 +1,7 @@
 import React from 'react';
 
 const iconProps = {
-  className: "w-6 h-6 text-white",
+  className: "w-7 h-7 text-white",
   viewBox: "0 0 24 24",
   fill: "currentColor",
   xmlns: "http://www.w3.org/2000/svg",
@@ -55,15 +55,13 @@ export const EffectsIcon: React.FC = () => (
         <line x1="20" y1="12" x2="20" y2="3"></line>
         <line x1="1" y1="14" x2="7" y2="14"></line>
         <line x1="9" y1="8" x2="15" y2="8"></line>
-        {/* FIX: Corrected malformed SVG line */}
         <line x1="17" y1="16" x2="23" y2="16"></line>
     </svg>
 );
 
-export const SustainIcon: React.FC = () => (
-    <svg {...iconProps} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <line x1="10" y1="12" x2="14" y2="12" />
-        <circle cx="7" cy="12" r="3" />
-        <circle cx="17" cy="12" r="3" />
+export const CloseIcon: React.FC = () => (
+    <svg {...iconProps} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <line x1="18" y1="6" x2="6" y2="18"></line>
+        <line x1="6" y1="6" x2="18" y2="18"></line>
     </svg>
 );
