@@ -1,7 +1,7 @@
 import React from 'react';
 
 const iconProps = {
-  className: "w-7 h-7 text-white",
+  className: "w-7 h-7",
   viewBox: "0 0 24 24",
   fill: "currentColor",
   xmlns: "http://www.w3.org/2000/svg",
@@ -64,5 +64,29 @@ export const CloseIcon: React.FC = () => (
     <svg {...iconProps} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <line x1="18" y1="6" x2="6" y2="18"></line>
         <line x1="6" y1="6" x2="18" y2="18"></line>
+    </svg>
+);
+
+export const SineWaveIcon: React.FC = () => (
+    <svg {...iconProps} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 12c2-8 6-8 8 0s6 8 8 0" />
+    </svg>
+);
+
+export const SquareWaveIcon: React.FC = () => (
+    <svg {...iconProps} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 12h4V6h8v12h8" />
+    </svg>
+);
+
+export const TriangleWaveIcon: React.FC = () => (
+    <svg {...iconProps} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 12l4-8 8 16 8-16" />
+    </svg>
+);
+
+export const SawtoothWaveIcon: React.FC = () => (
+    <svg {...iconProps} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 12l4-8v8l4-8v8l4-8v8" />
     </svg>
 );

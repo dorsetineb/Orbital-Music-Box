@@ -1,7 +1,7 @@
 import React from 'react';
 import type { NoteColor } from '../types';
 import { NOTE_COLORS } from '../constants';
-import { PlayIcon, PauseIcon, RecordIcon, ClearIcon, DownloadIcon, EffectsIcon } from './icons';
+import { PlayIcon, PauseIcon, RecordIcon, ClearIcon, DownloadIcon, EffectsIcon, SineWaveIcon, SquareWaveIcon, SawtoothWaveIcon, TriangleWaveIcon } from './icons';
 
 interface ControlsProps {
   isPlaying: boolean;
@@ -15,7 +15,17 @@ interface ControlsProps {
   onColorSelect: (color: NoteColor) => void;
   onClear: () => void;
   onToggleEffects: () => void;
+  activeWaveform: OscillatorType;
+  onWaveformSelect: (waveform: OscillatorType) => void;
 }
+
+const WAVEFORMS: { type: OscillatorType; icon: React.FC }[] = [
+    { type: 'sine', icon: SineWaveIcon },
+    { type: 'square', icon: SquareWaveIcon },
+    { type: 'triangle', icon: TriangleWaveIcon },
+    { type: 'sawtooth', icon: SawtoothWaveIcon },
+];
+
 
 const Controls: React.FC<ControlsProps> = (props) => {
   const {
@@ -29,7 +39,9 @@ const Controls: React.FC<ControlsProps> = (props) => {
     onSpeedChange,
     onColorSelect,
     onClear,
-    onToggleEffects
+    onToggleEffects,
+    activeWaveform,
+    onWaveformSelect,
   } = props;
 
   return (
@@ -62,24 +74,41 @@ const Controls: React.FC<ControlsProps> = (props) => {
         </div>
 
         {/* Container for Note Palette and Speed/Sustain to align their widths */}
-        <div className="w-full max-w-md flex flex-col items-center gap-3">
-            {/* Row 2: Note Palette */}
-            <div className="flex flex-wrap justify-center items-center gap-3">
-                {NOTE_COLORS.map(note => (
-                <button
-                    key={note.name}
-                    onClick={() => onColorSelect(note)}
-                    className={`w-10 h-10 rounded-full transition-all duration-200 flex justify-center items-center font-bold text-white ${activeColor.name === note.name ? 'ring-2 ring-offset-2 ring-offset-slate-800 scale-110' : 'opacity-60 saturate-50 hover:opacity-100 hover:saturate-100'}`}
-                    style={{ 
-                        backgroundColor: note.color, 
-                        '--tw-ring-color': note.color,
-                        textShadow: '0px 1px 3px rgba(0,0,0,0.6)' 
-                    } as React.CSSProperties}
-                    aria-label={`Select note ${note.name}`}
-                >
-                    {note.name.charAt(0)}
-                </button>
-                ))}
+        <div className="w-full max-w-lg flex flex-col items-center gap-3">
+             {/* Row 2: Note & Waveform Palettes */}
+            <div className="flex justify-center items-center gap-4 sm:gap-6">
+                {/* Note Palette */}
+                <div className="flex justify-center items-center gap-2">
+                    {NOTE_COLORS.map(note => (
+                    <button
+                        key={note.name}
+                        onClick={() => onColorSelect(note)}
+                        className={`w-9 h-9 rounded-full transition-all duration-200 flex justify-center items-center font-bold text-white ${activeColor.name === note.name ? 'ring-2 ring-offset-2 ring-offset-slate-800 scale-110' : 'opacity-60 saturate-50 hover:opacity-100 hover:saturate-100'}`}
+                        style={{ 
+                            backgroundColor: note.color, 
+                            '--tw-ring-color': note.color,
+                            textShadow: '0px 1px 3px rgba(0,0,0,0.6)' 
+                        } as React.CSSProperties}
+                        aria-label={`Select note ${note.name}`}
+                    >
+                        {note.name.charAt(0)}
+                    </button>
+                    ))}
+                </div>
+
+                {/* Waveform Palette */}
+                <div className="flex items-center gap-1 bg-slate-800 p-1 rounded-full">
+                    {WAVEFORMS.map(({ type, icon: Icon }) => (
+                        <button
+                            key={type}
+                            onClick={() => onWaveformSelect(type)}
+                            className={`w-9 h-9 flex items-center justify-center rounded-full transition-colors duration-200 ${activeWaveform === type ? 'bg-blue-500 text-white' : 'text-slate-400 hover:bg-slate-700 hover:text-white'}`}
+                            aria-label={`Select ${type} waveform`}
+                        >
+                            <Icon />
+                        </button>
+                    ))}
+                </div>
             </div>
 
             {/* Row 3: Speed Control */}

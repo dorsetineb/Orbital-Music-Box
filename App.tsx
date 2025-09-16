@@ -11,6 +11,7 @@ const App: React.FC = () => {
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [rotationSpeed, setRotationSpeed] = useState<number>(10); // seconds per rotation
   const [activeColor, setActiveColor] = useState<NoteColor>(NOTE_COLORS[0]);
+  const [activeWaveform, setActiveWaveform] = useState<OscillatorType>('triangle');
   const [rotation, setRotation] = useState<number>(0);
   const [recordedUrl, setRecordedUrl] = useState<string | null>(null);
   const [activeTracks, setActiveTracks] = useState<boolean[]>([true, true, true, true]);
@@ -98,7 +99,7 @@ const App: React.FC = () => {
         setNotes(prev => [...prev, newNote]);
         const octaveMultiplier = Math.pow(2, track);
         const frequency = activeColor.freq * octaveMultiplier;
-        playShortNote(frequency);
+        playShortNote(frequency, activeWaveform);
     }
   };
 
@@ -106,8 +107,14 @@ const App: React.FC = () => {
     await resumeAudio();
     setActiveColor(color);
     if (playPreviewNote) {
-      playPreviewNote(color.freq);
+      playPreviewNote(color.freq, activeWaveform);
     }
+  };
+
+  const handleWaveformSelect = async (waveform: OscillatorType) => {
+    await resumeAudio();
+    setActiveWaveform(waveform);
+    playPreviewNote(activeColor.freq, waveform);
   };
   
   const handleClear = () => {
@@ -196,7 +203,7 @@ const App: React.FC = () => {
 
         const startHasCrossed = didCrossPlayhead(note.angle, prevRotation, newRotation);
         if (startHasCrossed) {
-            playShortNote(frequency);
+            playShortNote(frequency, activeWaveform);
         }
     });
 
@@ -204,7 +211,7 @@ const App: React.FC = () => {
     setRotation(newRotation % 360);
 
     animationFrameRef.current = requestAnimationFrame(animate);
-  }, [notes, rotationSpeed, activeTracks, playShortNote]);
+  }, [notes, rotationSpeed, activeTracks, playShortNote, activeWaveform]);
 
   useEffect(() => {
     if (isPlaying) {
@@ -239,6 +246,8 @@ const App: React.FC = () => {
                 onClear={handleClear}
                 recordedUrl={recordedUrl}
                 onToggleEffects={() => setIsEffectsPanelOpen(p => !p)}
+                activeWaveform={activeWaveform}
+                onWaveformSelect={handleWaveformSelect}
             />
         </div>
 

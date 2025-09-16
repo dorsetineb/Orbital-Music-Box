@@ -188,7 +188,7 @@ const useAudioEngine = () => {
 
   }, [getAudioContext]);
   
-  const playShortNote = useCallback((frequency: number) => {
+  const playShortNote = useCallback((frequency: number, waveform: OscillatorType = 'triangle') => {
     const audioCtx = getAudioContext();
     const effectsInput = effectsChainRef.current?.input;
     if (!audioCtx || !effectsInput) return;
@@ -243,7 +243,7 @@ const useAudioEngine = () => {
 
     // Sub-oscillator (triangle) for body, slightly detuned for warmth
     const subOsc = audioCtx.createOscillator();
-    subOsc.type = 'triangle';
+    subOsc.type = waveform;
     subOsc.frequency.setValueAtTime(frequency * 0.502, now);
     subOsc.connect(tonalGain);
     subOsc.start(now);
@@ -251,7 +251,7 @@ const useAudioEngine = () => {
 
     // Main oscillator (triangle) for fundamental
     const mainOsc = audioCtx.createOscillator();
-    mainOsc.type = 'triangle';
+    mainOsc.type = waveform;
     mainOsc.frequency.setValueAtTime(frequency, now);
     mainOsc.connect(tonalGain);
     mainOsc.start(now);
@@ -293,7 +293,7 @@ const useAudioEngine = () => {
     }
   }, [getAudioContext]);
 
-  const playPreviewNote = useCallback((frequency: number) => {
+  const playPreviewNote = useCallback((frequency: number, waveform: OscillatorType = 'triangle') => {
     const audioCtx = getAudioContext();
     const effectsInput = effectsChainRef.current?.input;
     if (!audioCtx || !effectsInput) return;
@@ -319,7 +319,7 @@ const useAudioEngine = () => {
     const previewFreq = frequency * 2; // one octave up for preview
 
     const mainOsc = audioCtx.createOscillator();
-    mainOsc.type = 'triangle';
+    mainOsc.type = waveform;
     mainOsc.frequency.setValueAtTime(previewFreq, now);
     mainOsc.connect(masterGain);
     mainOsc.start(now);
